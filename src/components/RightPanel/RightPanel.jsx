@@ -71,7 +71,7 @@ export default function RightPanel({ safetyStats, dangerZones, lastUpdated, isLo
           </div>
         )}
         {dangerZones.map(zone => (
-          <div key={zone.id} style={s.zoneItem}>
+          <div key={zone.dangerZoneId} style={s.zoneItem}>
             <div style={s.zoneTopRow}>
               <span style={{
                 width: '8px', height: '8px', borderRadius: '50%',

@@ -27,25 +27,31 @@ export default function RegisterPage({ onGoLogin, onClose }) {
     if (err) { setError(err); return }
     setLoading(true)
     setError('')
+
     try {
-      // 백엔드 연동 시 주석 해제
-      // const res = await fetch('/users/register', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({
-      //     username: form.username,
-      //     nickname: form.nickname,
-      //     email: form.email,
-      //     password: form.password,
-      //   }),
-      // })
-      // const json = await res.json()
-      // if (!json.success) throw new Error(json.error?.message)
+      const res = await fetch('/users/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: form.username,
+          nickname: form.nickname,
+          email: form.email,
+          password: form.password,
+        }),
+      })
+
+      const json = await res.json()
+
+      if (!json.success) {
+        setError(json.error?.message || '회원가입에 실패했습니다.')
+        return
+      }
 
       setSuccess(true)
       setTimeout(() => onGoLogin(), 1500)
+
     } catch (err) {
-      setError(err.message || '회원가입에 실패했습니다.')
+      setError('서버 연결에 실패했습니다.')
     } finally {
       setLoading(false)
     }
@@ -73,7 +79,6 @@ export default function RegisterPage({ onGoLogin, onClose }) {
     <div style={s.bg}>
       <div style={s.card}>
 
-        {/* 닫기 버튼 */}
         <button style={s.closeBtn} onClick={onClose}>✕</button>
 
         <div style={s.logoRow}>
@@ -98,6 +103,7 @@ export default function RegisterPage({ onGoLogin, onClose }) {
               placeholder={field.placeholder}
               value={form[field.name]}
               onChange={handleChange}
+              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
             />
           </div>
         ))}

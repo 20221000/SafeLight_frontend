@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar/Sidebar'
 import SidebarToggleBtn from '../components/Sidebar/SidebarToggleBtn'
@@ -7,12 +7,21 @@ import { useSidebar } from '../hooks/useSidebar'
 
 const CATEGORIES = ['전체', '공지', '정보', '질문', '제보', '팁']
 
+const CATEGORY_MAP = {
+  '전체': null,
+  '공지': 'NOTICE',
+  '정보': 'INFO',
+  '질문': 'QUESTION',
+  '제보': 'REPORT',
+  '팁': 'TIP',
+}
+
 const CATEGORY_STYLE = {
-  '공지': { bg: '#4A5568', color: '#fff' },
-  '정보': { bg: '#3182CE', color: '#fff' },
-  '질문': { bg: '#00E676', color: '#000' },
-  '제보': { bg: '#E53E3E', color: '#fff' },
-  '팁':   { bg: '#D69E2E', color: '#fff' },
+  'NOTICE': { bg: '#4A5568', color: '#fff' },
+  'INFO':   { bg: '#3182CE', color: '#fff' },
+  'QUESTION': { bg: '#00E676', color: '#000' },
+  'REPORT': { bg: '#E53E3E', color: '#fff' },
+  'TIP':    { bg: '#D69E2E', color: '#fff' },
 }
 
 export default function CommunityPage({ user, onLogout }) {
@@ -22,12 +31,80 @@ export default function CommunityPage({ user, onLogout }) {
 
   const [activeCategory, setActiveCategory] = useState('전체')
   const [searchInput, setSearchInput] = useState('')
-  const [currentPage, setCurrentPage] = useState(1)
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [currentPage, setCurrentPage] = useState(0)
+  const [posts, setPosts] = useState([])
+  const [notices, setNotices] = useState([])
+  const [pageInfo, setPageInfo] = useState(null)
+  const [popularPosts, setPopularPosts] = useState([])
+  const [stats, setStats] = useState({ totalPosts: null, todayPosts: null, totalMembers: null })
+  const [loading, setLoading] = useState(false)
 
-  const posts = []
-  const notices = []
-  const popularPosts = []
-  const stats = { totalPosts: null, todayPosts: null, totalMembers: null }
+  // 게시글 목록 조회
+  const fetchPosts = async () => {
+
+    setLoading(true)
+    try {
+      let url = ''
+
+      if (searchKeyword) {
+        url = `/posts/search?keyword=${encodeURIComponent(searchKeyword)}&page=${currentPage}&size=10&sort=latest`
+      } else if (activeCategory === '전체') {
+        url = `/posts/community?page=${currentPage}&size=10`
+      } else {
+        const cat = CATEGORY_MAP[activeCategory]
+        url = `/posts?category=${cat}&page=${currentPage}&size=10&sort=latest`
+      }
+
+      // 토큰 있으면 헤더에 담기
+      const token = localStorage.getItem('accessToken')
+      const headers = {}
+      if (token) headers['Authorization'] = `Bearer ${token}`
+
+      const res = await fetch(url, { headers })
+      const json = await res.json()
+
+      if (!json.success) return
+
+      if (activeCategory === '전체' && !searchKeyword) {
+        setNotices(json.data.notices ?? [])
+        setPosts(json.data.items ?? [])
+        setPageInfo(json.data.pageInfo ?? null)
+      } else {
+        setNotices([])
+        setPosts(json.data.items ?? [])
+        setPageInfo(json.data.pageInfo ?? null)
+      }
+
+    } catch (err) {
+      console.error('게시글 조회 실패:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchPosts()
+  }, [activeCategory, currentPage, searchKeyword])
+
+  const handleSearch = () => {
+    setSearchKeyword(searchInput)
+    setCurrentPage(0)
+  }
+
+  const handleCategoryChange = (cat) => {
+    setActiveCategory(cat)
+    setCurrentPage(0)
+    setSearchKeyword('')
+    setSearchInput('')
+  }
+
+  const handlePostClick = async (postId) => {
+    const token = localStorage.getItem('accessToken')
+    const headers = token ? { Authorization: `Bearer ${token}` } : {}
+    await fetch(`/posts/${postId}/view`, { method: 'POST', headers })
+    navigate(`/community/${postId}`)
+  }
 
   const s = styles
 
@@ -36,7 +113,6 @@ export default function CommunityPage({ user, onLogout }) {
       display: 'flex', height: '100vh', width: '100vw',
       overflow: 'hidden', backgroundColor: '#0D1117', position: 'relative',
     }}>
-
       <Sidebar
         filters={{ cctv: true, streetLamp: true, safeZone: true }}
         onFilterChange={() => {}}
@@ -49,9 +125,7 @@ export default function CommunityPage({ user, onLogout }) {
       />
       <SidebarToggleBtn isOpen={sidebarOpen} onClick={() => setSidebarOpen(prev => !prev)} />
 
-      {/* 중앙 콘텐츠 */}
       <main style={s.main}>
-
         <div style={s.topBar}>
           <h2 style={s.pageTitle}>커뮤니티</h2>
           <div style={s.topRight}>
@@ -62,7 +136,14 @@ export default function CommunityPage({ user, onLogout }) {
                 placeholder="게시글 검색..."
                 value={searchInput}
                 onChange={e => setSearchInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSearch()}
               />
+              <button
+                style={s.searchBtn}
+                onClick={handleSearch}
+              >
+                검색
+              </button>
             </div>
             <button
               style={s.writeBtn}
@@ -81,7 +162,7 @@ export default function CommunityPage({ user, onLogout }) {
             <button
               key={cat}
               style={{ ...s.tab, ...(activeCategory === cat ? s.tabActive : {}) }}
-              onClick={() => setActiveCategory(cat)}
+              onClick={() => handleCategoryChange(cat)}
             >
               {cat}
             </button>
@@ -90,6 +171,7 @@ export default function CommunityPage({ user, onLogout }) {
 
         <div style={s.scrollArea}>
 
+          {/* 공지사항 */}
           {notices.length > 0 && (
             <>
               <div style={s.sectionLabel}>📌 공지사항</div>
@@ -97,45 +179,60 @@ export default function CommunityPage({ user, onLogout }) {
                 <div
                   key={notice.postId}
                   style={s.noticeCard}
-                  onClick={() => navigate(`/community/${notice.postId}`)}
+                  onClick={() => handlePostClick(notice.postId)}
                 >
-                  <span style={categoryBadgeStyle('공지')}>공지</span>
+                  <span style={categoryBadgeStyle('NOTICE')}>공지</span>
                   <span style={s.noticeTitle}>{notice.title}</span>
-                  <span style={s.noticeMeta}>{notice.date}</span>
+                  <span style={s.noticeMeta}>{notice.createdAt?.slice(0, 10)}</span>
                   <span style={s.noticeMeta}>👁 {notice.viewCount}</span>
                 </div>
               ))}
             </>
           )}
 
+          {/* 게시글 목록 */}
           <div style={{ marginTop: '12px' }}>
-            {posts.length > 0 ? (
+            {loading ? (
+              <div style={s.emptyState}>불러오는 중...</div>
+            ) : posts.length > 0 ? (
               posts.map(post => (
                 <PostCard
                   key={post.postId}
                   post={post}
-                  onClick={() => navigate(`/community/${post.postId}`)}
+                  onClick={() => handlePostClick(post.postId)}
                 />
               ))
             ) : (
-              <div style={s.emptyState}>아직 게시글이 없습니다.</div>
+              <div style={s.emptyState}>게시글이 없습니다.</div>
             )}
           </div>
 
-          {posts.length > 0 && (
+          {/* 페이지네이션 */}
+          {pageInfo && pageInfo.totalPages > 1 && (
             <div style={s.pagination}>
-              <button style={s.pageBtn}>{'<'}</button>
-              {[1, 2, 3, 4, 5].map(n => (
+              <button
+                style={s.pageBtn}
+                onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+                disabled={currentPage === 0}
+              >
+                {'<'}
+              </button>
+              {Array.from({ length: pageInfo.totalPages }, (_, i) => i).map(n => (
                 <button
                   key={n}
                   style={{ ...s.pageBtn, ...(currentPage === n ? s.pageBtnActive : {}) }}
                   onClick={() => setCurrentPage(n)}
                 >
-                  {n}
+                  {n + 1}
                 </button>
               ))}
-              <button style={s.pageBtn}>{'...'}</button>
-              <button style={s.pageBtn}>{'>'}</button>
+              <button
+                style={s.pageBtn}
+                onClick={() => setCurrentPage(p => Math.min(pageInfo.totalPages - 1, p + 1))}
+                disabled={currentPage === pageInfo.totalPages - 1}
+              >
+                {'>'}
+              </button>
             </div>
           )}
         </div>
@@ -150,7 +247,7 @@ export default function CommunityPage({ user, onLogout }) {
               <div
                 key={post.postId}
                 style={s.popularItem}
-                onClick={() => navigate(`/community/${post.postId}`)}
+                onClick={() => handlePostClick(post.postId)}
               >
                 <span style={s.popularRank}>{idx + 1}</span>
                 <div style={{ flex: 1 }}>
@@ -167,14 +264,14 @@ export default function CommunityPage({ user, onLogout }) {
         <div style={s.card}>
           <div style={s.cardTitle}>📊 커뮤니티 통계</div>
           {[
-            { label: '전체 게시글', value: stats.totalPosts },
+            { label: '전체 게시글', value: pageInfo?.totalElements },
             { label: '오늘 게시글', value: stats.todayPosts },
             { label: '전체 회원',   value: stats.totalMembers },
           ].map(item => (
             <div key={item.label} style={s.statRow}>
               <span style={s.statLabel}>{item.label}</span>
               <span style={s.statValue}>
-                {item.value !== null ? item.value.toLocaleString() : '-'}
+                {item.value != null ? item.value.toLocaleString() : '-'}
               </span>
             </div>
           ))}
@@ -192,10 +289,9 @@ function PostCard({ post, onClick }) {
         <span style={categoryBadgeStyle(post.category)}>{post.category}</span>
         <span style={s.postTitle}>{post.title}</span>
       </div>
-      <div style={s.postPreview}>{post.preview}</div>
       <div style={s.postBottom}>
         <span style={s.postMeta}>{post.nickname}</span>
-        <span style={s.postMeta}>{post.date}</span>
+        <span style={s.postMeta}>{post.createdAt?.slice(0, 10)}</span>
         <span style={s.postMeta}>👁 {post.viewCount}</span>
         <span style={s.postMeta}>❤ {post.likeCount}</span>
         <span style={s.postMeta}>💬 {post.commentCount}</span>
@@ -236,6 +332,11 @@ const styles = {
     background: 'none', border: 'none', outline: 'none',
     color: '#fff', fontSize: '13px', width: '180px',
   },
+  searchBtn: {
+    background: 'none', border: 'none',
+    color: '#00E676', fontSize: '13px', cursor: 'pointer',
+    fontWeight: '600',
+  },
   writeBtn: {
     backgroundColor: '#00E676', border: 'none',
     borderRadius: '8px', padding: '10px 20px',
@@ -274,10 +375,6 @@ const styles = {
   },
   postTop: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' },
   postTitle: { color: '#fff', fontSize: '15px', fontWeight: '600' },
-  postPreview: {
-    color: '#A0AEC0', fontSize: '13px', marginBottom: '10px',
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-  },
   postBottom: { display: 'flex', alignItems: 'center', gap: '12px' },
   postMeta: { color: '#A0AEC0', fontSize: '12px' },
   pagination: {

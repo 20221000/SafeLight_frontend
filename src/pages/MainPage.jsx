@@ -33,8 +33,8 @@ export default function MainPage({ user, onLogout }) {
       />
       <SidebarToggleBtn isOpen={sidebarOpen} onClick={() => setSidebarOpen(prev => !prev)} />
       <main style={{ flex: 1, height: '100vh', position: 'relative', overflow: 'hidden' }}>
-        <MapView filters={filters} />
-        <SosButton />
+        <MapView filters={filters} dangerZones={dangerZones} />
+        <SosButton user={user} />
       </main>
       <RightPanel
         safetyStats={safetyStats}

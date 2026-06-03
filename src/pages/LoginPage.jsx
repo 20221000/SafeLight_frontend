@@ -9,6 +9,18 @@ export default function LoginPage({ onLogin, onGoRegister, onClose }) {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
+  // JWT payload 디코딩 (role 추출용)
+  const decodeToken = (token) => {
+    try {
+      const base64 = token.split('.')[1]
+        .replace(/-/g, '+')
+        .replace(/_/g, '/')
+      return JSON.parse(atob(base64))
+    } catch {
+      return null
+    }
+  }
+
   const handleSubmit = async () => {
     if (!form.usernameOrEmail || !form.password) {
       setError('아이디와 비밀번호를 입력해주세요.')
@@ -16,18 +28,37 @@ export default function LoginPage({ onLogin, onGoRegister, onClose }) {
     }
     setLoading(true)
     setError('')
+
     try {
-      // 임시 관리자 계정 — 백엔드 연동 후 제거
-      if (form.usernameOrEmail === 'admin' && form.password === 'admin1234') {
-        onLogin({ userId: 0, username: 'admin', nickname: '관리자', role: 'ADMIN' })
+      const res = await fetch('/users/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          usernameOrEmail: form.usernameOrEmail,
+          password: form.password,
+        }),
+      })
+
+      const json = await res.json()
+
+      if (!json.success) {
+        setError(json.error?.message || '로그인에 실패했습니다.')
         return
       }
 
-      // 임시 일반 유저 — 백엔드 연동 후 제거
-      onLogin({ userId: 1, username: form.usernameOrEmail, nickname: '김민수', role: 'USER' })
+      const { accessToken, userId, username } = json.data
+
+      // 토큰에서 role 추출
+      const payload = decodeToken(accessToken)
+      const role = payload?.role ?? 'USER'
+
+      // localStorage 저장
+      localStorage.setItem('accessToken', accessToken)
+
+      onLogin({ userId, username, role })
 
     } catch (err) {
-      setError(err.message || '로그인에 실패했습니다.')
+      setError('서버 연결에 실패했습니다.')
     } finally {
       setLoading(false)
     }
@@ -39,10 +70,8 @@ export default function LoginPage({ onLogin, onGoRegister, onClose }) {
     <div style={s.bg}>
       <div style={s.card}>
 
-        {/* 닫기 버튼 */}
         <button style={s.closeBtn} onClick={onClose}>✕</button>
 
-        {/* 로고 */}
         <div style={s.logoRow}>
           <span style={{ fontSize: '28px' }}>🛡️</span>
           <span style={s.logoText}>Light Safe</span>

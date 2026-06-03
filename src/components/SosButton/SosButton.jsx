@@ -1,20 +1,74 @@
 import { useState } from 'react'
 
-export default function SosButton() {
+export default function SosButton({ user }) {
   const [pressed, setPressed] = useState(false)
   const [confirmed, setConfirmed] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   const handleClick = () => {
-    if (confirmed) return
+    if (confirmed || loading) return
+
+    // 비로그인 체크
+    if (!user) {
+      alert('긴급 신고는 로그인이 필요합니다.')
+      return
+    }
     setPressed(true)
   }
 
-  const handleConfirm = () => {
-    setConfirmed(true)
-    setPressed(false)
-    // TODO: POST /emergency-reports API 호출
-    alert('긴급 신고가 접수되었습니다. 주변 친구와 관계기관에 위치가 공유됩니다.')
-    setTimeout(() => setConfirmed(false), 5000)
+  const handleConfirm = async () => {
+    setLoading(true)
+
+    try {
+      // 1. 현재 위치 가져오기
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        })
+      })
+
+      const { latitude, longitude } = position.coords
+      const token = localStorage.getItem('accessToken')
+
+      // 2. 긴급신고 API 호출
+      const res = await fetch('/emergency-reports', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          latitude,
+          longitude,
+          description: '긴급 신고',
+        }),
+      })
+
+      const json = await res.json()
+
+      if (!json.success) {
+        alert(json.error?.message || '신고 접수에 실패했습니다.')
+        setPressed(false)
+        return
+      }
+
+      // 3. 성공
+      setConfirmed(true)
+      setPressed(false)
+      setTimeout(() => setConfirmed(false), 5000)
+
+    } catch (err) {
+      if (err.code === err.PERMISSION_DENIED) {
+        alert('위치 권한이 필요합니다. 브라우저 설정에서 위치 권한을 허용해주세요.')
+      } else {
+        alert('신고 접수 중 오류가 발생했습니다.')
+      }
+      setPressed(false)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -30,15 +84,16 @@ export default function SosButton() {
           style={{
             width: '72px', height: '72px', borderRadius: '50%',
             backgroundColor: confirmed ? '#00E676' : '#FF3B3B',
-            border: 'none', cursor: 'pointer',
+            border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
             fontSize: '15px', fontWeight: '800', color: 'white',
             boxShadow: confirmed
               ? '0 0 20px rgba(0,230,118,0.7), 0 0 40px rgba(0,230,118,0.3)'
               : '0 0 20px rgba(255,59,59,0.7), 0 0 40px rgba(255,59,59,0.3)',
             transition: 'all 0.2s', letterSpacing: '1px',
+            opacity: loading ? 0.7 : 1,
           }}
         >
-          {confirmed ? '✓' : 'SOS'}
+          {loading ? '...' : confirmed ? '✓' : 'SOS'}
         </button>
         <span style={{
           color: '#fff', fontSize: '12px', fontWeight: '600',
@@ -50,6 +105,7 @@ export default function SosButton() {
         </span>
       </div>
 
+      {/* 확인 모달 */}
       {pressed && (
         <div style={{
           position: 'absolute', inset: 0, zIndex: 200,
@@ -81,13 +137,16 @@ export default function SosButton() {
               </button>
               <button
                 onClick={handleConfirm}
+                disabled={loading}
                 style={{
                   flex: 1, padding: '12px', borderRadius: '8px',
                   backgroundColor: '#FF3B3B', border: 'none',
-                  color: '#fff', fontSize: '14px', fontWeight: '700', cursor: 'pointer',
+                  color: '#fff', fontSize: '14px', fontWeight: '700',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  opacity: loading ? 0.7 : 1,
                 }}
               >
-                신고하기
+                {loading ? '접수 중...' : '신고하기'}
               </button>
             </div>
           </div>
