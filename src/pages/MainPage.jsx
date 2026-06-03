@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import Sidebar from '../components/Sidebar/Sidebar'
 import SidebarToggleBtn from '../components/Sidebar/SidebarToggleBtn'
 import MapView from '../components/Map/MapView'
@@ -11,10 +11,14 @@ import { useSidebar } from '../hooks/useSidebar'
 
 export default function MainPage({ user, onLogout }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const handleNavigate = useNavigation()
   const { sidebarOpen, setSidebarOpen } = useSidebar()
   const { safetyStats, dangerZones, lastUpdated, isLoading } = useSafetyData()
   const [filters, setFilters] = useState({ cctv: true, streetLamp: true, safeZone: true })
+
+  // 경로 안내에서 넘어온 데이터
+  const routeState = location.state?.routeActive ? location.state : null
 
   return (
     <div style={{
@@ -33,7 +37,11 @@ export default function MainPage({ user, onLogout }) {
       />
       <SidebarToggleBtn isOpen={sidebarOpen} onClick={() => setSidebarOpen(prev => !prev)} />
       <main style={{ flex: 1, height: '100vh', position: 'relative', overflow: 'hidden' }}>
-        <MapView filters={filters} dangerZones={dangerZones} />
+        <MapView
+          filters={filters}
+          dangerZones={dangerZones}
+          routeState={routeState}
+        />
         <SosButton user={user} />
       </main>
       <RightPanel

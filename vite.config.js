@@ -16,6 +16,8 @@ export default defineConfig({
       '/safe-routes': 'http://localhost:8080',
       '/route-history': 'http://localhost:8080',
       '/favorite-places': 'http://localhost:8080',
+      '/routes': 'http://localhost:8080',
+      '/bookmarks': 'http://localhost:8080',
     }
   }
 })

@@ -19,14 +19,37 @@ async function fetchMarkerData() {
   }
 }
 
-export default function MapView({ filters, dangerZones = [] }) {
+export default function MapView({ filters, dangerZones = [], routeState = null }) {
   const mapRef = useRef(null)
   const mapInstance = useRef(null)
   const clustererRef = useRef(null)
   const allDataRef = useRef({ cctv: [], streetLamp: [], safeZone: [] })
   const locationMarkerRef = useRef(null)
-  const kakaoMarkersRef = useRef([])
   const dangerZoneOverlaysRef = useRef([])
+  const routePolylinesRef = useRef([])
+  const routeMarkersRef = useRef([])
+
+  // 뷰포트 내 CCTV 마커 렌더링
+  const renderCctvInBounds = useCallback(() => {
+    if (!mapInstance.current || !clustererRef.current) return
+
+    const bounds = mapInstance.current.getBounds()
+    const data = allDataRef.current
+
+    clustererRef.current.clear()
+
+    const inBounds = data.cctv.filter(pos =>
+      bounds.contain(new window.kakao.maps.LatLng(pos.lat, pos.lng))
+    )
+
+    const markers = inBounds.map(pos =>
+      new window.kakao.maps.Marker({
+        position: new window.kakao.maps.LatLng(pos.lat, pos.lng),
+      })
+    )
+
+    clustererRef.current.addMarkers(markers)
+  }, [])
 
   // 위험구역 그리기
   const drawDangerZones = useCallback((zones) => {
@@ -39,9 +62,9 @@ export default function MapView({ filters, dangerZones = [] }) {
     dangerZoneOverlaysRef.current = []
 
     const LEVEL_COLOR = {
-      HIGH:   { stroke: '#FF3B3B', fill: 'rgba(255,59,59,0.15)' },
-      MEDIUM: { stroke: '#FF9500', fill: 'rgba(255,149,0,0.15)' },
-      LOW:    { stroke: '#FFD600', fill: 'rgba(255,214,0,0.15)' },
+      HIGH:   { stroke: '#FF3B3B' },
+      MEDIUM: { stroke: '#FF9500' },
+      LOW:    { stroke: '#FFD600' },
     }
 
     zones.filter(z => z.isActive).forEach(zone => {
@@ -64,12 +87,9 @@ export default function MapView({ filters, dangerZones = [] }) {
 
       const content = `
         <div style="
-          background:${color.stroke};
-          color:#fff;
-          padding:3px 8px;
-          border-radius:6px;
-          font-size:11px;
-          font-weight:700;
+          background:${color.stroke};color:#fff;
+          padding:3px 8px;border-radius:6px;
+          font-size:11px;font-weight:700;
           box-shadow:0 2px 6px rgba(0,0,0,0.3);
           white-space:nowrap;
         ">⚠️ ${zone.dangerLevel}</div>
@@ -83,6 +103,73 @@ export default function MapView({ filters, dangerZones = [] }) {
     })
   }, [])
 
+  // 경로 그리기
+  const drawRouteOnMap = useCallback((routePath, start, dest) => {
+    if (!mapInstance.current || !window.kakao || !routePath) return
+
+    routePolylinesRef.current.forEach(p => p.setMap(null))
+    routePolylinesRef.current = []
+    routeMarkersRef.current.forEach(m => m.setMap(null))
+    routeMarkersRef.current = []
+
+    const linePath = routePath.map(point =>
+      new window.kakao.maps.LatLng(point.latitude, point.longitude)
+    )
+
+    if (linePath.length === 0) return
+
+    const polyline = new window.kakao.maps.Polyline({
+      path: linePath,
+      strokeWeight: 6,
+      strokeColor: '#00E676',
+      strokeOpacity: 0.85,
+      strokeStyle: 'solid',
+    })
+    polyline.setMap(mapInstance.current)
+    routePolylinesRef.current.push(polyline)
+
+    if (start) {
+      const startOverlay = new window.kakao.maps.CustomOverlay({
+        position: new window.kakao.maps.LatLng(start.lat, start.lng),
+        content: `
+          <div style="
+            background:#00E676;border-radius:50%;
+            width:36px;height:36px;
+            display:flex;align-items:center;justify-content:center;
+            color:#000;font-size:11px;font-weight:700;
+            border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);
+          ">출발</div>
+        `,
+        yAnchor: 1,
+      })
+      startOverlay.setMap(mapInstance.current)
+      routeMarkersRef.current.push(startOverlay)
+    }
+
+    if (dest) {
+      const destOverlay = new window.kakao.maps.CustomOverlay({
+        position: new window.kakao.maps.LatLng(dest.lat, dest.lng),
+        content: `
+          <div style="
+            background:#FF3B3B;border-radius:50%;
+            width:36px;height:36px;
+            display:flex;align-items:center;justify-content:center;
+            color:#fff;font-size:11px;font-weight:700;
+            border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);
+          ">도착</div>
+        `,
+        yAnchor: 1,
+      })
+      destOverlay.setMap(mapInstance.current)
+      routeMarkersRef.current.push(destOverlay)
+    }
+
+    const bounds = new window.kakao.maps.LatLngBounds()
+    linePath.forEach(latlng => bounds.extend(latlng))
+    mapInstance.current.setBounds(bounds)
+  }, [])
+
+  // 지도 초기화
   useEffect(() => {
     const initMap = () => {
       if (!window.kakao || !window.kakao.maps) return
@@ -115,16 +202,11 @@ export default function MapView({ filters, dangerZones = [] }) {
 
       fetchMarkerData().then(data => {
         allDataRef.current = data
+        if (filters.cctv) renderCctvInBounds()
+      })
 
-        kakaoMarkersRef.current = data.cctv.map(pos =>
-          new window.kakao.maps.Marker({
-            position: new window.kakao.maps.LatLng(pos.lat, pos.lng),
-          })
-        )
-
-        if (filters.cctv) {
-          clustererRef.current.addMarkers(kakaoMarkersRef.current)
-        }
+      window.kakao.maps.event.addListener(mapInstance.current, 'idle', () => {
+        if (filters.cctv) renderCctvInBounds()
       })
 
       navigator.geolocation?.getCurrentPosition(
@@ -180,28 +262,49 @@ export default function MapView({ filters, dangerZones = [] }) {
       }, 300)
       return () => clearInterval(check)
     }
-  }, [])
+  }, [renderCctvInBounds])
 
-  // 필터 변경 시 클러스터 토글
+  // 필터 변경 시
   useEffect(() => {
-    if (!clustererRef.current || kakaoMarkersRef.current.length === 0) return
+    if (!clustererRef.current) return
     if (filters.cctv) {
-      clustererRef.current.addMarkers(kakaoMarkersRef.current)
+      renderCctvInBounds()
     } else {
       clustererRef.current.clear()
     }
-  }, [filters])
+  }, [filters, renderCctvInBounds])
 
-  // 위험구역 변경 시 갱신
+  // 위험구역 변경 시
   useEffect(() => {
     if (mapInstance.current) {
       drawDangerZones(dangerZones)
     }
   }, [dangerZones, drawDangerZones])
 
+  // 경로 안내에서 넘어온 경우
+  useEffect(() => {
+    if (routeState?.routePath && mapInstance.current) {
+      drawRouteOnMap(routeState.routePath, routeState.start, routeState.dest)
+    }
+  }, [routeState, drawRouteOnMap])
+
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+
+      {routeState?.routeActive && (
+        <div style={{
+          position: 'absolute', top: '70px', left: '50%',
+          transform: 'translateX(-50%)', zIndex: 10,
+          backgroundColor: 'rgba(0,230,118,0.95)',
+          borderRadius: '20px', padding: '8px 20px',
+          color: '#000', fontSize: '13px', fontWeight: '700',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+          whiteSpace: 'nowrap',
+        }}>
+          🧭 경로 안내 중 · CCTV {routeState.safetyScore}개 경유
+        </div>
+      )}
 
       {/* 상단 검색바 */}
       <div style={{
