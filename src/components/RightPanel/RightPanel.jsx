@@ -1,175 +1,96 @@
-import { useState, useEffect } from 'react'
+// Light Safe 우측 안전 드로어 (디자인 A) — 근처 위험 구역 (열기/닫기 토글)
+// 백엔드 DangerZoneResponse 실제 필드만 사용: dangerZoneId, centerLat/Lng, dangerLevel, reportCount, radius, isActive
+import { useState } from 'react'
+import { LEVEL_STYLE } from '../../theme/tokens'
 
-const LEVEL_STYLE = {
-  HIGH:   { bg: '#FF3B3B', color: '#fff' },
-  MEDIUM: { bg: '#FF9500', color: '#fff' },
-  LOW:    { bg: '#00E676', color: '#000' },
-}
-
-export default function RightPanel({ safetyStats, dangerZones, lastUpdated, isLoading }) {
-  const [timeAgo, setTimeAgo] = useState('방금 전')
-
-  useEffect(() => {
-    const update = () => {
-      const diff = Math.floor((Date.now() - lastUpdated.getTime()) / 1000)
-      if (diff < 10)      setTimeAgo('방금 전')
-      else if (diff < 60) setTimeAgo(`${diff}초 전`)
-      else                setTimeAgo(`${Math.floor(diff / 60)}분 전`)
-    }
-    update()
-    const t = setInterval(update, 10_000)
-    return () => clearInterval(t)
-  }, [lastUpdated])
-
-  const score = safetyStats?.safetyScore ?? 85
-  const scoreColor = score >= 80 ? '#00E676' : score >= 60 ? '#FF9500' : '#FF3B3B'
-  const scoreLabel = score >= 80 ? '우수' : score >= 60 ? '보통' : '위험'
-  const s = styles
+export default function RightPanel({ dangerZones = [], isLoading = false }) {
+  const [open, setOpen] = useState(true) // 우측 안전 현황 열기/닫기
+  const activeZones = dangerZones.filter(z => z.isActive)
 
   return (
-    <aside style={s.panel}>
-      <div style={s.card}>
-        <div style={s.cardHeaderRow}>
-          <span style={s.cardTitle}>내 주변 안전 현황</span>
-          <div style={s.liveRow}>
-            <span style={{
-              ...s.liveDot,
-              backgroundColor: isLoading ? '#FFD600' : '#00E676',
-              animation: 'pulse 1.5s infinite',
-            }} />
-            <span style={s.liveText}>
-              {isLoading ? '업데이트 중...' : `${timeAgo} 업데이트`}
-            </span>
-          </div>
-        </div>
+    <div style={{ position: 'relative', flexShrink: 0, height: '100%' }}>
+      {/* 열기/닫기 토글 핸들 */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        title={open ? '패널 닫기' : '안전 현황 열기'}
+        style={{
+          position: 'absolute', top: 16, left: -15, zIndex: 6,
+          width: 30, height: 46, padding: 0, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'var(--surface)', border: '1px solid var(--border)', borderRight: 'none',
+          borderRadius: '10px 0 0 10px', color: 'var(--text-muted)', boxShadow: '-2px 0 8px rgba(15,23,42,.06)',
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'none' : 'rotate(180deg)' }}>
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+      </button>
 
-        <div style={s.statsRow}>
-          <StatBox icon="📷" label="CCTV"  value={`${safetyStats?.cctv ?? 23}개`} />
-          <StatBox icon="💡" label="가로등" value={`${safetyStats?.streetLamp ?? 41}개`} />
-          <StatBox icon="🏪" label="편의점" value={`${safetyStats?.convenience ?? 8}개`} />
+      <aside className="ls-scroll" style={{
+        width: open ? 320 : 0, height: '100%',
+        overflowY: open ? 'auto' : 'hidden', overflowX: 'hidden',
+        background: 'var(--surface)', borderLeft: open ? '1px solid var(--border)' : 'none',
+        transition: 'width .3s ease',
+      }}>
+        <div style={{ width: 320 }}>
+      {/* 헤더 */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px 12px',
+        position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 2,
+      }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-.2px' }}>내 주변 안전 현황</div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>반경 500m · 마포구 서교동</div>
         </div>
-
-        <div style={s.scoreRow}>
-          <span style={s.scoreLabel}>안전도</span>
-          <div style={s.scoreBar}>
-            <div style={{
-              ...s.scoreBarFill,
-              width: `${score}%`,
-              backgroundColor: scoreColor,
-              transition: 'width 0.6s ease, background-color 0.3s',
-            }} />
-          </div>
-          <span style={{ ...s.scoreValue, color: scoreColor }}>{scoreLabel}</span>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(16,185,129,.12)', color: 'var(--safe)',
+          fontSize: 11, fontWeight: 700, padding: '5px 9px', borderRadius: 20,
+        }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--safe)', animation: 'ls-blink 1.6s infinite' }} />
+          {isLoading ? '갱신중' : 'LIVE'}
         </div>
       </div>
 
-      <div style={s.card}>
-        <div style={s.cardTitle}>① 근처 위험 구역</div>
-        {dangerZones.length === 0 && (
-          <div style={{ color: '#A0AEC0', fontSize: '12px', padding: '8px 0' }}>
-            주변 위험 구역 없음
+      {/* 근처 위험 구역 */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 18px 10px' }}>
+        <div style={{ fontSize: 13.5, fontWeight: 700 }}>근처 위험 구역</div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeZones.length}건</div>
+      </div>
+      <div style={{ padding: '0 18px 22px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+        {activeZones.length === 0 && (
+          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', textAlign: 'center', padding: '18px 0' }}>
+            주변에 등록된 위험 구역이 없습니다.
           </div>
         )}
-        {dangerZones.map(zone => (
-          <div key={zone.dangerZoneId} style={s.zoneItem}>
-            <div style={s.zoneTopRow}>
-              <span style={{
-                width: '8px', height: '8px', borderRadius: '50%',
-                backgroundColor: LEVEL_STYLE[zone.level]?.bg ?? '#FF9500',
-                display: 'inline-block', flexShrink: 0,
-              }} />
-              <span style={s.zoneName}>{zone.name}</span>
+        {activeZones.map(z => {
+          const lv = LEVEL_STYLE[z.dangerLevel] ?? LEVEL_STYLE.LOW
+          return (
+            <div key={z.dangerZoneId} style={{
+              border: '1px solid var(--border)', borderLeft: `4px solid ${lv.color}`, borderRadius: 12,
+              padding: '12px 13px', background: 'var(--surface)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, letterSpacing: '-.2px' }}>위험구역 #{z.dangerZoneId}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: "'Inter',sans-serif", marginTop: 2 }}>
+                    {Number(z.centerLatitude).toFixed(4)}, {Number(z.centerLongitude).toFixed(4)}
+                  </div>
+                </div>
+                <span style={{
+                  flexShrink: 0, background: lv.bg, color: lv.color, fontSize: 10.5, fontWeight: 800,
+                  letterSpacing: '.4px', padding: '3px 8px', borderRadius: 7, fontFamily: "'Inter',sans-serif",
+                }}>{lv.label}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--text-muted)', marginTop: 10 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 21s7-6.4 7-11a7 7 0 1 0-14 0c0 4.6 7 11 7 11z" /><circle cx="12" cy="10" r="2.4" /></svg>
+                신고 {z.reportCount ?? 0}건 · 반경 {z.radius ?? 0}m
+              </div>
             </div>
-            <div style={s.zoneBottomRow}>
-              <span style={{
-                ...s.levelBadge,
-                backgroundColor: LEVEL_STYLE[zone.level]?.bg ?? '#FF9500',
-                color: LEVEL_STYLE[zone.level]?.color ?? '#fff',
-              }}>
-                {zone.level}
-              </span>
-              <span style={s.zoneDistance}>{zone.distance}</span>
-              <button style={s.mapViewBtn}>지도 보기 ↗</button>
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
-
-      <div style={s.footer}>
-        <span style={s.liveIndicator}>● LIVE</span>
-        <span style={s.footerText}>실시간 안전 정보 자동 업데이트 중</span>
-      </div>
-
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50%       { opacity: 0.4; }
-        }
-      `}</style>
-    </aside>
-  )
-}
-
-function StatBox({ icon, label, value }) {
-  return (
-    <div style={{
-      flex: 1, backgroundColor: '#0D1117', borderRadius: '8px',
-      padding: '10px 6px', textAlign: 'center', border: '1px solid #1E2535',
-    }}>
-      <div style={{ fontSize: '18px', marginBottom: '4px' }}>{icon}</div>
-      <div style={{ color: '#A0AEC0', fontSize: '11px', marginBottom: '2px' }}>{label}</div>
-      <div style={{ color: '#fff', fontSize: '15px', fontWeight: '700' }}>{value}</div>
+        </div>
+      </aside>
     </div>
   )
-}
-
-const styles = {
-  panel: {
-    width: '300px', flexShrink: 0, height: '100vh',
-    backgroundColor: '#0D1117', borderLeft: '1px solid #1E2535',
-    display: 'flex', flexDirection: 'column',
-    padding: '16px 12px', overflowY: 'auto', gap: '10px',
-  },
-  card: {
-    backgroundColor: '#161B27', borderRadius: '12px',
-    padding: '14px', border: '1px solid #1E2535',
-  },
-  cardHeaderRow: {
-    display: 'flex', alignItems: 'center',
-    justifyContent: 'space-between', marginBottom: '12px',
-  },
-  cardTitle: { color: '#fff', fontSize: '13px', fontWeight: '600' },
-  liveRow: { display: 'flex', alignItems: 'center', gap: '5px' },
-  liveDot: { width: '7px', height: '7px', borderRadius: '50%' },
-  liveText: { color: '#A0AEC0', fontSize: '10px' },
-  statsRow: { display: 'flex', gap: '8px', marginBottom: '12px' },
-  scoreRow: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' },
-  scoreLabel: { color: '#A0AEC0', fontSize: '11px', whiteSpace: 'nowrap' },
-  scoreBar: {
-    flex: 1, height: '6px', backgroundColor: '#1E2535',
-    borderRadius: '3px', overflow: 'hidden',
-  },
-  scoreBarFill: { height: '100%', borderRadius: '3px' },
-  scoreValue: { fontSize: '11px', fontWeight: '700', whiteSpace: 'nowrap' },
-  zoneItem: {
-    backgroundColor: '#0D1117', borderRadius: '8px',
-    padding: '10px', marginTop: '8px', border: '1px solid #1E2535',
-  },
-  zoneTopRow: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' },
-  zoneName: { color: '#fff', fontSize: '13px', fontWeight: '500' },
-  zoneBottomRow: { display: 'flex', alignItems: 'center', gap: '8px' },
-  levelBadge: {
-    fontSize: '10px', fontWeight: '700', padding: '2px 7px', borderRadius: '4px',
-  },
-  zoneDistance: { color: '#A0AEC0', fontSize: '12px', flex: 1 },
-  mapViewBtn: {
-    background: 'none', border: 'none', color: '#00E676',
-    fontSize: '12px', cursor: 'pointer', padding: 0,
-  },
-  footer: {
-    marginTop: 'auto', paddingTop: '8px',
-    display: 'flex', alignItems: 'center', gap: '6px',
-  },
-  liveIndicator: { color: '#00E676', fontSize: '10px', fontWeight: '700' },
-  footerText: { color: '#A0AEC0', fontSize: '11px' },
 }

@@ -16,22 +16,7 @@ const fetchDangerZones = async () => {
   }
 }
 
-const fetchSafetyStats = async () => {
-  try {
-    const token = localStorage.getItem('accessToken')
-    if (!token) return { cctv: 0, streetLamp: 0, convenience: 0, safetyScore: 0 }
-
-    // 추후 백엔드 stats API 구현되면 연동
-    return { cctv: 0, streetLamp: 0, convenience: 0, safetyScore: 0 }
-  } catch (err) {
-    return { cctv: 0, streetLamp: 0, convenience: 0, safetyScore: 0 }
-  }
-}
-
 export function useSafetyData() {
-  const [safetyStats, setSafetyStats] = useState({
-    cctv: 0, streetLamp: 0, convenience: 0, safetyScore: 0,
-  })
   const [dangerZones, setDangerZones] = useState([])
   const [lastUpdated, setLastUpdated] = useState(new Date())
   const [isLoading, setIsLoading] = useState(false)
@@ -39,11 +24,7 @@ export function useSafetyData() {
   const refresh = useCallback(async () => {
     setIsLoading(true)
     try {
-      const [stats, zones] = await Promise.all([
-        fetchSafetyStats(),
-        fetchDangerZones(),
-      ])
-      setSafetyStats(stats)
+      const zones = await fetchDangerZones()
       setDangerZones(zones)
       setLastUpdated(new Date())
     } catch (err) {
@@ -62,5 +43,5 @@ export function useSafetyData() {
     return () => clearInterval(timer)
   }, [refresh])
 
-  return { safetyStats, dangerZones, lastUpdated, isLoading, refresh }
+  return { dangerZones, lastUpdated, isLoading, refresh }
 }

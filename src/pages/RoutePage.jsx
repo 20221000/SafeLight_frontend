@@ -1,14 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import Sidebar from '../components/Sidebar/Sidebar'
-import SidebarToggleBtn from '../components/Sidebar/SidebarToggleBtn'
-import { useNavigation } from '../hooks/useNavigation'
-import { useSidebar } from '../hooks/useSidebar'
+import UserShell from '../components/layout/UserShell'
+
+const START_COLOR = '#2563EB'
+const DEST_COLOR = '#E11D48'
 
 export default function RoutePage({ user, onLogout }) {
   const navigate = useNavigate()
-  const handleNavigate = useNavigation()
-  const { sidebarOpen, setSidebarOpen } = useSidebar()
   const mapRef = useRef(null)
   const mapInstance = useRef(null)
   const markersRef = useRef([])
@@ -27,11 +25,13 @@ export default function RoutePage({ user, onLogout }) {
   const [destResult, setDestResult] = useState([])
   const [selectedDest, setSelectedDest] = useState(null)
 
+  const [pendingPlace, setPendingPlace] = useState(null) // 상단 검색에서 넘어온 장소 (출발/도착 선택 대기)
   const [routes, setRoutes] = useState([])
   const [selectedRoute, setSelectedRoute] = useState(null)
   const [isSearched, setIsSearched] = useState(false)
   const [loading, setLoading] = useState(false)
   const [bookmarks, setBookmarks] = useState([])
+  const [panelOpen, setPanelOpen] = useState(true) // 좌측 경로 안내 패널 열기/닫기
 
   const token = localStorage.getItem('accessToken')
   const authHeader = token ? { Authorization: `Bearer ${token}` } : {}
@@ -40,53 +40,26 @@ export default function RoutePage({ user, onLogout }) {
     const initMap = () => {
       if (!window.kakao || !window.kakao.maps) return
       const container = mapRef.current
-      const options = {
-        center: new window.kakao.maps.LatLng(37.4979, 127.0276),
-        level: 4,
-      }
-      mapInstance.current = new window.kakao.maps.Map(container, options)
-
+      mapInstance.current = new window.kakao.maps.Map(container, {
+        center: new window.kakao.maps.LatLng(37.4979, 127.0276), level: 4,
+      })
       clustererRef.current = new window.kakao.maps.MarkerClusterer({
-        map: mapInstance.current,
-        averageCenter: true,
-        minLevel: 5,
+        map: mapInstance.current, averageCenter: true, minLevel: 5,
         styles: [{
-          width: '44px', height: '44px',
-          background: 'rgba(0,230,118,0.9)',
-          borderRadius: '50%',
-          color: '#000',
-          textAlign: 'center',
-          lineHeight: '44px',
-          fontSize: '13px',
-          fontWeight: '700',
-          border: '2px solid #fff',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          width: '44px', height: '44px', background: 'rgba(37,99,235,0.9)', borderRadius: '50%',
+          color: '#fff', textAlign: 'center', lineHeight: '44px', fontSize: '13px', fontWeight: '700',
+          border: '2px solid #fff', boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
         }],
       })
-
-      fetch('/cctvs')
-        .then(r => r.json())
-        .then(json => {
-          if (!json.success) return
-          kakaoMarkersRef.current = json.data.map(item =>
-            new window.kakao.maps.Marker({
-              position: new window.kakao.maps.LatLng(item.latitude, item.longitude),
-            })
-          )
-          clustererRef.current.addMarkers(kakaoMarkersRef.current)
-        })
-        .catch(err => console.error('CCTV 로드 실패:', err))
+      fetch('/cctvs').then(r => r.json()).then(json => {
+        if (!json.success) return
+        kakaoMarkersRef.current = json.data.map(item => new window.kakao.maps.Marker({ position: new window.kakao.maps.LatLng(item.latitude, item.longitude) }))
+        clustererRef.current.addMarkers(kakaoMarkersRef.current)
+      }).catch(err => console.error('CCTV 로드 실패:', err))
     }
-
-    if (window.kakao && window.kakao.maps) {
-      initMap()
-    } else {
-      const check = setInterval(() => {
-        if (window.kakao && window.kakao.maps) {
-          clearInterval(check)
-          initMap()
-        }
-      }, 300)
+    if (window.kakao && window.kakao.maps) initMap()
+    else {
+      const check = setInterval(() => { if (window.kakao && window.kakao.maps) { clearInterval(check); initMap() } }, 300)
       return () => clearInterval(check)
     }
   }, [])
@@ -100,9 +73,8 @@ export default function RoutePage({ user, onLogout }) {
           setSelectedStart({ lat: latitude, lng: longitude, name: '현재 위치' })
           if (mapInstance.current) {
             const latlng = new window.kakao.maps.LatLng(latitude, longitude)
-            mapInstance.current.setCenter(latlng)
-            mapInstance.current.setLevel(4)
-            addMarker(latlng, '출발', '#00E676')
+            mapInstance.current.setCenter(latlng); mapInstance.current.setLevel(4)
+            addMarker(latlng, '출발', START_COLOR)
           }
         },
         () => setCurrentLocation(null),
@@ -111,8 +83,17 @@ export default function RoutePage({ user, onLogout }) {
     }
   }, [startMode])
 
+  useEffect(() => { fetchBookmarks() }, [])
+
+  // 좌측 패널 접힘/펼침 등으로 지도 컨테이너 크기가 바뀌면 카카오 지도 relayout (안 하면 타일이 잘림)
   useEffect(() => {
-    fetchBookmarks()
+    if (!mapRef.current || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      if (!mapInstance.current) return
+      requestAnimationFrame(() => mapInstance.current.relayout())
+    })
+    ro.observe(mapRef.current)
+    return () => ro.disconnect()
   }, [])
 
   const fetchBookmarks = async () => {
@@ -120,9 +101,7 @@ export default function RoutePage({ user, onLogout }) {
       const res = await fetch('/bookmarks', { headers: authHeader })
       const json = await res.json()
       if (json.success) setBookmarks(json.data ?? [])
-    } catch (err) {
-      console.error('북마크 조회 실패:', err)
-    }
+    } catch (err) { console.error('북마크 조회 실패:', err) }
   }
 
   const searchPlace = (keyword, setResult) => {
@@ -130,686 +109,320 @@ export default function RoutePage({ user, onLogout }) {
     const ps = new window.kakao.maps.services.Places()
     ps.keywordSearch(keyword, (data, status) => {
       if (status === window.kakao.maps.services.Status.OK) {
-        setResult(data.slice(0, 4).map(p => ({
-          name: p.place_name,
-          address: p.road_address_name || p.address_name,
-          lat: parseFloat(p.y),
-          lng: parseFloat(p.x),
-        })))
+        setResult(data.slice(0, 4).map(p => ({ name: p.place_name, address: p.road_address_name || p.address_name, lat: parseFloat(p.y), lng: parseFloat(p.x) })))
       }
     })
   }
 
-  const clearMarkers = () => {
-    markersRef.current.forEach(m => m.setMap(null))
-    markersRef.current = []
-  }
-
-  const clearPolylines = () => {
-    polylinesRef.current.forEach(p => p.setMap(null))
-    polylinesRef.current = []
-  }
+  const clearMarkers = () => { markersRef.current.forEach(m => m.setMap(null)); markersRef.current = [] }
+  const clearPolylines = () => { polylinesRef.current.forEach(p => p.setMap(null)); polylinesRef.current = [] }
 
   const addMarker = (latlng, label, color) => {
     if (!mapInstance.current) return
-    const content = `
-      <div style="
-        background:${color};border-radius:50%;
-        width:36px;height:36px;
-        display:flex;align-items:center;justify-content:center;
-        color:#000;font-size:11px;font-weight:700;
-        border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);
-      ">${label}</div>
-    `
-    const overlay = new window.kakao.maps.CustomOverlay({
-      position: latlng, content, yAnchor: 1,
-    })
+    const content = `<div style="background:${color};border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.25);">${label}</div>`
+    const overlay = new window.kakao.maps.CustomOverlay({ position: latlng, content, yAnchor: 1 })
     overlay.setMap(mapInstance.current)
     markersRef.current.push(overlay)
   }
 
   const handleSelectStart = (place) => {
-    setSelectedStart(place)
-    setStartResult([])
-    setStartSearch(place.name)
+    setSelectedStart(place); setStartResult([]); setStartSearch(place.name)
     if (mapInstance.current) {
       clearMarkers()
       const latlng = new window.kakao.maps.LatLng(place.lat, place.lng)
-      mapInstance.current.setCenter(latlng)
-      addMarker(latlng, '출발', '#00E676')
-      if (selectedDest) {
-        addMarker(
-          new window.kakao.maps.LatLng(selectedDest.lat, selectedDest.lng),
-          '도착', '#FF3B3B'
-        )
-      }
+      mapInstance.current.setCenter(latlng); addMarker(latlng, '출발', START_COLOR)
+      if (selectedDest) addMarker(new window.kakao.maps.LatLng(selectedDest.lat, selectedDest.lng), '도착', DEST_COLOR)
     }
   }
 
   const handleSelectDest = (place) => {
-    setSelectedDest(place)
-    setDestResult([])
-    setDestSearch(place.name)
+    setSelectedDest(place); setDestResult([]); setDestSearch(place.name)
     if (mapInstance.current) {
       clearMarkers()
-      if (selectedStart) {
-        addMarker(
-          new window.kakao.maps.LatLng(selectedStart.lat, selectedStart.lng),
-          '출발', '#00E676'
-        )
-      }
+      if (selectedStart) addMarker(new window.kakao.maps.LatLng(selectedStart.lat, selectedStart.lng), '출발', START_COLOR)
       const destLatlng = new window.kakao.maps.LatLng(place.lat, place.lng)
-      addMarker(destLatlng, '도착', '#FF3B3B')
-      mapInstance.current.setCenter(destLatlng)
+      addMarker(destLatlng, '도착', DEST_COLOR); mapInstance.current.setCenter(destLatlng)
     }
   }
 
-  const handleSearchRoute = async () => {
-    if (!selectedStart || !selectedDest) {
-      alert('출발지와 도착지를 설정해주세요.')
-      return
-    }
+  // 상단 검색에서 장소를 고르면 출발/도착 선택 팝업을 띄운다
+  const applyPendingAsStart = () => {
+    if (!pendingPlace) return
+    setStartMode('search')
+    handleSelectStart(pendingPlace)
+    setPendingPlace(null)
+  }
+  const applyPendingAsDest = () => {
+    if (!pendingPlace) return
+    setDestMode('search')
+    handleSelectDest(pendingPlace)
+    setPendingPlace(null)
+  }
 
+  const handleSearchRoute = async () => {
+    if (!selectedStart || !selectedDest) { alert('출발지와 도착지를 설정해주세요.'); return }
     setLoading(true)
     try {
-      const offsets = [
-        { dLat: 0,       dLng: 0 },
-        { dLat: 0.0003,  dLng: 0.0003 },
-        { dLat: -0.0003, dLng: 0.0003 },
-      ]
-
-      const results = await Promise.all(
-        offsets.map((offset, idx) =>
-          fetch('/routes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...authHeader },
-            body: JSON.stringify({
-              startLatitude:  selectedStart.lat + offset.dLat,
-              startLongitude: selectedStart.lng + offset.dLng,
-              endLatitude:    selectedDest.lat,
-              endLongitude:   selectedDest.lng,
-            }),
-          })
-          .then(r => r.json())
-          .then(json => {
-            if (json.success && json.data?.[0]) {
-              return { ...json.data[0], routeId: idx + 1 }
-            }
-            return null
-          })
-          .catch(() => null)
-        )
-      )
-
+      const offsets = [{ dLat: 0, dLng: 0 }, { dLat: 0.0003, dLng: 0.0003 }, { dLat: -0.0003, dLng: 0.0003 }]
+      const results = await Promise.all(offsets.map((offset, idx) =>
+        fetch('/routes', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader },
+          body: JSON.stringify({ startLatitude: selectedStart.lat + offset.dLat, startLongitude: selectedStart.lng + offset.dLng, endLatitude: selectedDest.lat, endLongitude: selectedDest.lng }),
+        }).then(r => r.json()).then(json => (json.success && json.data?.[0]) ? { ...json.data[0], routeId: idx + 1 } : null).catch(() => null)
+      ))
       const validRoutes = results.filter(Boolean)
-
-      if (validRoutes.length === 0) {
-        alert('경로를 찾을 수 없습니다.')
-        return
-      }
-
+      if (validRoutes.length === 0) { alert('경로를 찾을 수 없습니다.'); return }
       validRoutes.sort((a, b) => b.safetyScore - a.safetyScore)
-
-      const labeled = validRoutes.map((r, idx) => ({
-        ...r,
-        routeId: idx + 1,
-        label: idx === 0 ? '추천' : `경로 ${idx + 1}`,
-      }))
-
-      setRoutes(labeled)
-      setSelectedRoute(labeled[0])
-      setIsSearched(true)
-      drawRoute(labeled[0])
-
+      const labeled = validRoutes.map((r, idx) => ({ ...r, routeId: idx + 1, label: idx === 0 ? '추천' : `경로 ${idx + 1}` }))
+      setRoutes(labeled); setSelectedRoute(labeled[0]); setIsSearched(true); drawRoute(labeled[0])
     } catch (err) {
-      console.error('경로 검색 실패:', err)
-      alert('경로 검색에 실패했습니다.')
-    } finally {
-      setLoading(false)
-    }
+      console.error('경로 검색 실패:', err); alert('경로 검색에 실패했습니다.')
+    } finally { setLoading(false) }
   }
 
   const drawRoute = (route) => {
     if (!mapInstance.current || !route?.path) return
-
-    clearPolylines()
-    clearMarkers()
-
-    const linePath = route.path.map(point =>
-      new window.kakao.maps.LatLng(point.latitude, point.longitude)
-    )
-
+    clearPolylines(); clearMarkers()
+    const linePath = route.path.map(point => new window.kakao.maps.LatLng(point.latitude, point.longitude))
     if (linePath.length === 0) return
-
-    const polyline = new window.kakao.maps.Polyline({
-      path: linePath,
-      strokeWeight: 6,
-      strokeColor: '#00E676',
-      strokeOpacity: 0.85,
-      strokeStyle: 'solid',
-    })
-    polyline.setMap(mapInstance.current)
-    polylinesRef.current.push(polyline)
-
-    if (selectedStart) {
-      addMarker(
-        new window.kakao.maps.LatLng(selectedStart.lat, selectedStart.lng),
-        '출발', '#00E676'
-      )
-    }
-    if (selectedDest) {
-      addMarker(
-        new window.kakao.maps.LatLng(selectedDest.lat, selectedDest.lng),
-        '도착', '#FF3B3B'
-      )
-    }
-
+    const polyline = new window.kakao.maps.Polyline({ path: linePath, strokeWeight: 6, strokeColor: START_COLOR, strokeOpacity: 0.9, strokeStyle: 'solid' })
+    polyline.setMap(mapInstance.current); polylinesRef.current.push(polyline)
+    if (selectedStart) addMarker(new window.kakao.maps.LatLng(selectedStart.lat, selectedStart.lng), '출발', START_COLOR)
+    if (selectedDest) addMarker(new window.kakao.maps.LatLng(selectedDest.lat, selectedDest.lng), '도착', DEST_COLOR)
     const bounds = new window.kakao.maps.LatLngBounds()
-    linePath.forEach(latlng => bounds.extend(latlng))
-    mapInstance.current.setBounds(bounds)
+    linePath.forEach(latlng => bounds.extend(latlng)); mapInstance.current.setBounds(bounds)
   }
 
   const handleBookmarkSave = async () => {
     if (!selectedRoute || !selectedStart || !selectedDest) return
     try {
       const res = await fetch('/bookmarks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeader },
-        body: JSON.stringify({
-          routeName: `${selectedStart.name} → ${selectedDest.name}`,
-          startLatitude: selectedStart.lat,
-          startLongitude: selectedStart.lng,
-          endLatitude: selectedDest.lat,
-          endLongitude: selectedDest.lng,
-          safetyScore: selectedRoute.safetyScore,
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader },
+        body: JSON.stringify({ routeName: `${selectedStart.name} → ${selectedDest.name}`, startLatitude: selectedStart.lat, startLongitude: selectedStart.lng, endLatitude: selectedDest.lat, endLongitude: selectedDest.lng, safetyScore: selectedRoute.safetyScore }),
       })
       const json = await res.json()
-      if (json.success) {
-        alert('북마크에 저장되었습니다.')
-        fetchBookmarks()
-      }
-    } catch (err) {
-      alert('저장에 실패했습니다.')
-    }
+      if (json.success) { alert('북마크에 저장되었습니다.'); fetchBookmarks() }
+    } catch (err) { alert('저장에 실패했습니다.') }
   }
 
   const handleBookmarkDelete = async (id) => {
     if (!window.confirm('북마크를 삭제할까요?')) return
-    try {
-      await fetch(`/bookmarks/${id}`, { method: 'DELETE', headers: authHeader })
-      fetchBookmarks()
-    } catch (err) {
-      alert('삭제에 실패했습니다.')
-    }
+    try { await fetch(`/bookmarks/${id}`, { method: 'DELETE', headers: authHeader }); fetchBookmarks() }
+    catch (err) { alert('삭제에 실패했습니다.') }
   }
 
   const handleBookmarkRoute = (bookmark) => {
-    const start = {
-      lat: bookmark.startLatitude,
-      lng: bookmark.startLongitude,
-      name: bookmark.routeName.split(' → ')[0] ?? '출발지',
-    }
-    const dest = {
-      lat: bookmark.endLatitude,
-      lng: bookmark.endLongitude,
-      name: bookmark.routeName.split(' → ')[1] ?? '도착지',
-    }
-    setSelectedStart(start)
-    setSelectedDest(dest)
-    setStartSearch(start.name)
-    setDestSearch(dest.name)
-    setStartMode('search')
-
+    const start = { lat: bookmark.startLatitude, lng: bookmark.startLongitude, name: bookmark.routeName.split(' → ')[0] ?? '출발지' }
+    const dest = { lat: bookmark.endLatitude, lng: bookmark.endLongitude, name: bookmark.routeName.split(' → ')[1] ?? '도착지' }
+    setSelectedStart(start); setSelectedDest(dest); setStartSearch(start.name); setDestSearch(dest.name); setStartMode('search')
     if (mapInstance.current) {
       clearMarkers()
-      addMarker(new window.kakao.maps.LatLng(start.lat, start.lng), '출발', '#00E676')
-      addMarker(new window.kakao.maps.LatLng(dest.lat, dest.lng), '도착', '#FF3B3B')
+      addMarker(new window.kakao.maps.LatLng(start.lat, start.lng), '출발', START_COLOR)
+      addMarker(new window.kakao.maps.LatLng(dest.lat, dest.lng), '도착', DEST_COLOR)
     }
   }
 
-  const scoreColor = (score) => {
-    if (score >= 20) return '#00E676'
-    if (score >= 10) return '#FFD600'
-    return '#FF3B3B'
-  }
-
-  const s = styles
+  const scoreColor = (score) => (score >= 20 ? 'var(--safe)' : score >= 10 ? 'var(--warning)' : 'var(--danger)')
 
   return (
-    <div style={{
-      display: 'flex', height: '100vh', width: '100vw',
-      overflow: 'hidden', backgroundColor: '#0D1117', position: 'relative',
-    }}>
-      <Sidebar
-        filters={{ cctv: true, streetLamp: true, safeZone: true }}
-        onFilterChange={() => {}}
-        user={user}
-        onLogout={onLogout}
-        onGoLogin={() => navigate('/login')}
-        onNavigate={handleNavigate}
-        activePage="route"
-        isOpen={sidebarOpen}
-      />
-      <SidebarToggleBtn isOpen={sidebarOpen} onClick={() => setSidebarOpen(prev => !prev)} />
-
-      {/* 좌측 패널 */}
-      <div style={s.formPanel}>
-        <div style={s.scrollArea}>
-
-          {/* 출발지 */}
-          <div style={s.card}>
-            <div style={s.cardTitle}>① 출발지</div>
-            <div style={s.modeRow}>
-              <button
-                style={{ ...s.modeBtn, ...(startMode === 'current' ? s.modeBtnActive : {}) }}
-                onClick={() => { setStartMode('current'); setStartResult([]) }}
-              >
-                📍 현재 위치
-              </button>
-              <button
-                style={{ ...s.modeBtn, ...(startMode === 'search' ? s.modeBtnActive : {}) }}
-                onClick={() => setStartMode('search')}
-              >
-                🔍 직접 검색
-              </button>
+    <UserShell user={user} onLogout={onLogout} active="route" scroll={false} contentBg="var(--map-bg)" onPickPlace={setPendingPlace}>
+      <div style={{ display: 'flex', height: '100%' }}>
+        {/* 좌측 폼 패널 (열기/닫기 애니메이션) */}
+        <div style={{ flex: panelOpen ? '0 0 360px' : '0 0 0px', width: panelOpen ? 360 : 0, minWidth: 0, overflow: 'hidden', transition: 'width .3s ease, flex-basis .3s ease' }}>
+          <div className="ls-scroll" style={{ width: 360, height: '100%', overflowY: 'auto', background: 'var(--surface)', borderRight: '1px solid var(--border)' }}>
+          <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-.3px' }}>안전 경로 안내</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>CCTV·가로등 밀집도로 안전한 길을 찾습니다</div>
             </div>
 
-            {startMode === 'current' && (
-              <div style={s.locationStatus}>
-                {currentLocation ? (
-                  <>
-                    <span style={s.greenDot} />
+            {/* 출발지 */}
+            <Card title="① 출발지">
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                <ModeBtn active={startMode === 'current'} onClick={() => { setStartMode('current'); setStartResult([]) }}>📍 현재 위치</ModeBtn>
+                <ModeBtn active={startMode === 'search'} onClick={() => setStartMode('search')}>🔍 직접 검색</ModeBtn>
+              </div>
+              {startMode === 'current' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 11, padding: '11px 13px' }}>
+                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: currentLocation ? 'var(--safe)' : 'var(--warning)', flexShrink: 0 }} />
+                  {currentLocation ? (
                     <div>
-                      <div style={{ color: '#00E676', fontSize: '13px', fontWeight: '600' }}>
-                        현재 위치 확인됨
-                      </div>
-                      <div style={{ color: '#A0AEC0', fontSize: '11px', marginTop: '2px' }}>
-                        위도 {currentLocation.lat.toFixed(4)} · 경도 {currentLocation.lng.toFixed(4)}
-                      </div>
+                      <div style={{ color: 'var(--safe)', fontSize: 13, fontWeight: 600 }}>현재 위치 확인됨</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 2, fontFamily: "'Inter',sans-serif" }}>{currentLocation.lat.toFixed(4)} · {currentLocation.lng.toFixed(4)}</div>
                     </div>
-                  </>
-                ) : (
-                  <>
-                    <span style={{ ...s.greenDot, backgroundColor: '#FFD600' }} />
-                    <div style={{ color: '#A0AEC0', fontSize: '13px' }}>
-                      현재 위치를 가져오는 중...
-                    </div>
-                  </>
-                )}
+                  ) : <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>현재 위치를 가져오는 중...</div>}
+                </div>
+              )}
+              {startMode === 'search' && (
+                <div>
+                  <input style={inputStyle} placeholder="출발지 검색..." value={startSearch} onChange={e => { setStartSearch(e.target.value); searchPlace(e.target.value, setStartResult) }} />
+                  {startResult.length > 0 && <ResultList list={startResult} onPick={handleSelectStart} color={START_COLOR} />}
+                </div>
+              )}
+            </Card>
+
+            {/* 도착지 */}
+            <Card title="② 도착지">
+              <div style={{ display: 'flex', marginBottom: 12, borderBottom: '1px solid var(--border)' }}>
+                <TabBtn active={destMode === 'bookmark'} onClick={() => setDestMode('bookmark')}>⭐ 북마크</TabBtn>
+                <TabBtn active={destMode === 'search'} onClick={() => setDestMode('search')}>🔍 직접 검색</TabBtn>
               </div>
+              {destMode === 'bookmark' && (
+                bookmarks.length > 0 ? bookmarks.map(bm => (
+                  <div key={bm.id} onClick={() => handleBookmarkRoute(bm)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 8px', borderRadius: 10, cursor: 'pointer' }}>
+                    <span style={{ fontSize: 18 }}>⭐</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{bm.routeName}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>CCTV {bm.safetyScore}개</div>
+                    </div>
+                    <button onClick={e => { e.stopPropagation(); handleBookmarkDelete(bm.id) }} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer' }}>✕</button>
+                  </div>
+                )) : <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '20px 0' }}>저장된 북마크가 없습니다.</div>
+              )}
+              {destMode === 'search' && (
+                <div>
+                  <input style={inputStyle} placeholder="도착지 검색..." value={destSearch} onChange={e => { setDestSearch(e.target.value); searchPlace(e.target.value, setDestResult) }} />
+                  {destResult.length > 0 && <ResultList list={destResult} onPick={handleSelectDest} color={DEST_COLOR} />}
+                </div>
+              )}
+            </Card>
+
+            {!isSearched && (
+              <button onClick={handleSearchRoute} disabled={loading} style={{ width: '100%', height: 48, border: 'none', borderRadius: 12, background: 'var(--blue-primary)', color: '#fff', fontSize: 15, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? .7 : 1, boxShadow: '0 6px 16px rgba(37,99,235,.28)', fontFamily: 'inherit' }}>
+                {loading ? '경로 탐색 중...' : '🔍 안전 경로 찾기'}
+              </button>
             )}
 
-            {startMode === 'search' && (
-              <div>
-                <input
-                  style={s.searchInput}
-                  placeholder="출발지 검색..."
-                  value={startSearch}
-                  onChange={e => {
-                    setStartSearch(e.target.value)
-                    searchPlace(e.target.value, setStartResult)
-                  }}
-                />
-                {startResult.length > 0 && (
-                  <div style={s.resultList}>
-                    {startResult.map((place, idx) => (
-                      <div key={idx} style={s.resultItem} onClick={() => handleSelectStart(place)}>
-                        <span style={{ color: '#00E676' }}>📍</span>
-                        <div>
-                          <div style={s.resultName}>{place.name}</div>
-                          <div style={s.resultAddr}>{place.address}</div>
-                        </div>
+            {isSearched && (
+              <Card title="③ 추천 경로">
+                {routes.map((route, idx) => {
+                  const on = selectedRoute?.routeId === route.routeId
+                  return (
+                    <div key={route.routeId} onClick={() => { setSelectedRoute(route); drawRoute(route) }} style={{
+                      borderRadius: 12, padding: 13, marginBottom: 8, cursor: 'pointer',
+                      border: `1px solid ${on ? 'var(--blue-primary)' : 'var(--border)'}`, background: on ? 'var(--blue-tint)' : 'var(--bg)',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>경로 {idx + 1}</span>
+                        {idx === 0 && <span style={{ background: 'var(--blue-primary)', color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 6 }}>추천</span>}
+                        <span style={{ fontSize: 13, fontWeight: 700, color: scoreColor(route.safetyScore) }}>CCTV {route.safetyScore}개</span>
                       </div>
-                    ))}
+                      <div style={{ width: '100%', height: 5, background: 'var(--border)', borderRadius: 3, overflow: 'hidden', marginBottom: 8 }}>
+                        <div style={{ height: 5, borderRadius: 3, background: scoreColor(route.safetyScore), width: `${Math.min(route.safetyScore * 2, 100)}%`, transition: 'width .4s' }} />
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{route.description}</div>
+                    </div>
+                  )
+                })}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                  <button onClick={() => { if (!selectedRoute) return; navigate('/', { state: { routeActive: true, routePath: selectedRoute.path, start: selectedStart, dest: selectedDest, safetyScore: selectedRoute.safetyScore } }) }}
+                    style={{ width: '100%', height: 44, border: 'none', borderRadius: 11, background: 'var(--blue-primary)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>▶ 지도에서 경로 보기</button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={handleBookmarkSave} style={{ flex: 1, height: 42, border: '1px solid var(--blue-primary)', borderRadius: 11, background: 'var(--surface)', color: 'var(--blue-primary)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>⭐ 북마크 저장</button>
+                    <button onClick={() => { setIsSearched(false); setRoutes([]); setSelectedRoute(null); clearPolylines(); clearMarkers(); setSelectedStart(null); setSelectedDest(null); setStartSearch(''); setDestSearch(''); setStartMode('current') }}
+                      style={{ flex: 1, height: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--surface)', color: 'var(--text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>🔄 다시 검색</button>
                   </div>
-                )}
-              </div>
+                </div>
+              </Card>
             )}
           </div>
-
-          {/* 도착지 */}
-          <div style={s.card}>
-            <div style={s.cardTitle}>② 도착지</div>
-            <div style={s.tabRow}>
-              <button
-                style={{ ...s.tab, ...(destMode === 'bookmark' ? s.tabActive : {}) }}
-                onClick={() => setDestMode('bookmark')}
-              >
-                ⭐ 북마크
-              </button>
-              <button
-                style={{ ...s.tab, ...(destMode === 'search' ? s.tabActive : {}) }}
-                onClick={() => setDestMode('search')}
-              >
-                🔍 직접 검색
-              </button>
-            </div>
-
-            {destMode === 'bookmark' && (
-              <div>
-                {bookmarks.length > 0 ? (
-                  bookmarks.map(bm => (
-                    <div key={bm.id} style={s.placeItem} onClick={() => handleBookmarkRoute(bm)}>
-                      <span style={{ fontSize: '18px' }}>⭐</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={s.placeName}>{bm.routeName}</div>
-                        <div style={s.placeAddr}>CCTV {bm.safetyScore}개</div>
-                      </div>
-                      <button
-                        style={s.removeBtn}
-                        onClick={e => { e.stopPropagation(); handleBookmarkDelete(bm.id) }}
-                      >✕</button>
-                    </div>
-                  ))
-                ) : (
-                  <div style={s.emptySmall}>저장된 북마크가 없습니다.</div>
-                )}
-              </div>
-            )}
-
-            {destMode === 'search' && (
-              <div>
-                <input
-                  style={s.searchInput}
-                  placeholder="도착지 검색..."
-                  value={destSearch}
-                  onChange={e => {
-                    setDestSearch(e.target.value)
-                    searchPlace(e.target.value, setDestResult)
-                  }}
-                />
-                {destResult.length > 0 && (
-                  <div style={s.resultList}>
-                    {destResult.map((place, idx) => (
-                      <div key={idx} style={s.resultItem} onClick={() => handleSelectDest(place)}>
-                        <span style={{ color: '#FF3B3B' }}>📍</span>
-                        <div>
-                          <div style={s.resultName}>{place.name}</div>
-                          <div style={s.resultAddr}>{place.address}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
+        </div>
 
-          {/* 경로 찾기 버튼 */}
-          {!isSearched && (
-            <button
-              style={{ ...s.searchBtn, opacity: loading ? 0.7 : 1 }}
-              onClick={handleSearchRoute}
-              disabled={loading}
-            >
-              {loading ? '경로 탐색 중...' : '🔍 안전 경로 찾기'}
-            </button>
-          )}
+        {/* 지도 */}
+        <div style={{ flex: 1, position: 'relative' }}>
+          <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
-          {/* 경로 결과 */}
-          {isSearched && (
-            <div style={s.card}>
-              <div style={s.cardTitle}>③ 추천 경로</div>
-              {routes.map((route, idx) => (
-                <div
-                  key={route.routeId}
-                  style={{
-                    ...s.routeCard,
-                    ...(selectedRoute?.routeId === route.routeId ? s.routeCardActive : {}),
-                  }}
-                  onClick={() => {
-                    setSelectedRoute(route)
-                    drawRoute(route)
-                  }}
-                >
-                  <div style={s.routeTop}>
-                    <span style={s.routeName}>경로 {idx + 1}</span>
-                    {idx === 0 && <span style={s.recommendBadge}>추천</span>}
-                    <span style={{ ...s.scoreText, color: scoreColor(route.safetyScore) }}>
-                      CCTV {route.safetyScore}개
-                    </span>
-                  </div>
-                  <div style={s.routeScoreBar}>
-                    <div style={{
-                      height: '4px', borderRadius: '2px',
-                      backgroundColor: scoreColor(route.safetyScore),
-                      width: `${Math.min(route.safetyScore * 2, 100)}%`,
-                      transition: 'width 0.4s',
-                    }} />
-                  </div>
-                  <div style={s.routeDesc}>{route.description}</div>
+          {/* 좌측 패널 열기/닫기 핸들 */}
+          <button
+            onClick={() => setPanelOpen(o => !o)}
+            title={panelOpen ? '패널 닫기' : '경로 안내 열기'}
+            style={{
+              position: 'absolute', top: 16, left: 0, zIndex: 11,
+              width: 30, height: 46, padding: 0, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'var(--surface)', border: '1px solid var(--border)', borderLeft: 'none',
+              borderRadius: '0 10px 10px 0', color: 'var(--text-muted)', boxShadow: '2px 0 8px rgba(15,23,42,.06)',
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: panelOpen ? 'rotate(180deg)' : 'none' }}>
+              <path d="M9 6l6 6-6 6" />
+            </svg>
+          </button>
+
+          {/* 상단 검색에서 고른 장소 → 출발/도착 선택 팝업 */}
+          {pendingPlace && (
+            <div style={{
+              position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 20,
+              background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14,
+              padding: 16, minWidth: 260, boxShadow: 'var(--shadow)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <span style={{ fontSize: 16 }}>📍</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-.2px' }}>{pendingPlace.name}</div>
+                  {pendingPlace.address && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>{pendingPlace.address}</div>}
                 </div>
-              ))}
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-                <button
-                  style={s.startBtn}
-                  onClick={() => {
-                    if (!selectedRoute) return
-                    navigate('/', {
-                      state: {
-                        routeActive: true,
-                        routePath: selectedRoute.path,
-                        start: selectedStart,
-                        dest: selectedDest,
-                        safetyScore: selectedRoute.safetyScore,
-                      }
-                    })
-                  }}
-                >
-                  ▶ 지도에서 경로 보기
-                </button>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button style={s.bookmarkBtn} onClick={handleBookmarkSave}>
-                    ⭐ 북마크 저장
-                  </button>
-                  <button
-                    style={s.resetBtn}
-                    onClick={() => {
-                      setIsSearched(false)
-                      setRoutes([])
-                      setSelectedRoute(null)
-                      clearPolylines()
-                      clearMarkers()
-                      setSelectedStart(null)
-                      setSelectedDest(null)
-                      setStartSearch('')
-                      setDestSearch('')
-                      setStartMode('current')
-                    }}
-                  >
-                    🔄 다시 검색
-                  </button>
-                </div>
+                <button onClick={() => setPendingPlace(null)} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: 15, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button onClick={applyPendingAsStart} style={{ flex: 1, height: 40, border: 'none', borderRadius: 10, background: START_COLOR, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>출발지로 설정</button>
+                <button onClick={applyPendingAsDest} style={{ flex: 1, height: 40, border: 'none', borderRadius: 10, background: DEST_COLOR, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>도착지로 설정</button>
               </div>
             </div>
           )}
 
-        </div>
-      </div>
-
-      {/* 지도 */}
-      <div style={{ flex: 1, position: 'relative' }}>
-        <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
-
-        {selectedRoute && (
-          <div style={s.safetyCard}>
-            <div style={s.safetyTitle}>선택 경로 안전도</div>
-            <div style={{ ...s.safetyScore, color: scoreColor(selectedRoute.safetyScore) }}>
-              CCTV {selectedRoute.safetyScore}개
+          {selectedRoute && (
+            <div style={{ position: 'absolute', top: 16, right: 72, zIndex: 10, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 16, minWidth: 170, boxShadow: 'var(--shadow)' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>선택 경로 안전도</div>
+              <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 6, color: scoreColor(selectedRoute.safetyScore) }}>CCTV {selectedRoute.safetyScore}개</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>{selectedRoute.description}</div>
             </div>
-            <div style={s.safetyDesc}>{selectedRoute.description}</div>
+          )}
+          <div style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 10, display: 'flex', flexDirection: 'column', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 11, overflow: 'hidden', boxShadow: 'var(--shadow)' }}>
+            {['+', '−'].map((btn, i) => (
+              <button key={btn} onClick={() => { if (!mapInstance.current) return; const level = mapInstance.current.getLevel(); mapInstance.current.setLevel(btn === '+' ? level - 1 : level + 1) }}
+                style={{ width: 40, height: 40, border: 'none', borderBottom: i === 0 ? '1px solid var(--border)' : 'none', background: 'transparent', cursor: 'pointer', fontSize: 19, color: 'var(--text-strong)' }}>{btn}</button>
+            ))}
           </div>
-        )}
-
-        <div style={s.zoomControl}>
-          {['+', '−'].map(btn => (
-            <button key={btn} style={s.zoomBtn} onClick={() => {
-              if (!mapInstance.current) return
-              const level = mapInstance.current.getLevel()
-              mapInstance.current.setLevel(btn === '+' ? level - 1 : level + 1)
-            }}>{btn}</button>
-          ))}
+          <button onClick={() => { if (currentLocation && mapInstance.current) mapInstance.current.setCenter(new window.kakao.maps.LatLng(currentLocation.lat, currentLocation.lng)) }}
+            style={{ position: 'absolute', bottom: 108, right: 20, zIndex: 10, width: 40, height: 40, borderRadius: 11, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--blue-primary)', cursor: 'pointer', boxShadow: 'var(--shadow)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3.2" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" strokeLinecap="round" /></svg>
+          </button>
         </div>
-
-        <button
-          style={s.myLocationBtn}
-          onClick={() => {
-            if (currentLocation && mapInstance.current) {
-              mapInstance.current.setCenter(
-                new window.kakao.maps.LatLng(currentLocation.lat, currentLocation.lng)
-              )
-            }
-          }}
-        >
-          🎯
-        </button>
       </div>
+    </UserShell>
+  )
+}
+
+function Card({ title, children }) {
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 16 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>{title}</div>
+      {children}
+    </div>
+  )
+}
+function ModeBtn({ active, onClick, children }) {
+  return <button onClick={onClick} style={{ flex: 1, height: 40, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', border: `1px solid ${active ? 'transparent' : 'var(--border)'}`, background: active ? 'var(--blue-primary)' : 'var(--bg)', color: active ? '#fff' : 'var(--text-muted)', fontWeight: active ? 700 : 500 }}>{children}</button>
+}
+function TabBtn({ active, onClick, children }) {
+  return <button onClick={onClick} style={{ flex: 1, padding: '9px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', color: active ? 'var(--blue-primary)' : 'var(--text-muted)', borderBottom: `2px solid ${active ? 'var(--blue-primary)' : 'transparent'}`, marginBottom: -1, fontWeight: active ? 700 : 500 }}>{children}</button>
+}
+function ResultList({ list, onPick, color }) {
+  return (
+    <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginTop: 4 }}>
+      {list.map((place, idx) => (
+        <div key={idx} onClick={() => onPick(place)} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}>
+          <span style={{ color }}>📍</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{place.name}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{place.address}</div>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
 
-const styles = {
-  formPanel: {
-    width: '360px', flexShrink: 0, height: '100vh',
-    backgroundColor: '#0D1117', borderRight: '1px solid #1E2535',
-    display: 'flex', flexDirection: 'column',
-  },
-  scrollArea: {
-    flex: 1, overflowY: 'auto', padding: '16px',
-    display: 'flex', flexDirection: 'column', gap: '12px',
-  },
-  card: {
-    backgroundColor: '#161B27', borderRadius: '12px',
-    padding: '16px', border: '1px solid #1E2535',
-  },
-  cardTitle: { color: '#fff', fontSize: '14px', fontWeight: '700', marginBottom: '12px' },
-  modeRow: { display: 'flex', gap: '8px', marginBottom: '12px' },
-  modeBtn: {
-    flex: 1, padding: '10px', borderRadius: '8px',
-    backgroundColor: '#0D1117', border: '1px solid #2D3748',
-    color: '#A0AEC0', fontSize: '13px', cursor: 'pointer',
-  },
-  modeBtnActive: {
-    backgroundColor: '#00E676', border: '1px solid #00E676',
-    color: '#000', fontWeight: '700',
-  },
-  locationStatus: {
-    display: 'flex', alignItems: 'center', gap: '10px',
-    backgroundColor: '#0D1117', borderRadius: '8px',
-    padding: '10px 12px', border: '1px solid #1E2535',
-  },
-  greenDot: {
-    width: '10px', height: '10px', borderRadius: '50%',
-    backgroundColor: '#00E676', flexShrink: 0,
-    boxShadow: '0 0 6px #00E676',
-  },
-  searchInput: {
-    width: '100%', backgroundColor: '#0D1117',
-    border: '1px solid #2D3748', borderRadius: '8px',
-    padding: '10px 14px', color: '#fff', fontSize: '13px',
-    outline: 'none', boxSizing: 'border-box', marginBottom: '4px',
-  },
-  resultList: {
-    backgroundColor: '#0D1117', border: '1px solid #1E2535',
-    borderRadius: '8px', overflow: 'hidden',
-  },
-  resultItem: {
-    display: 'flex', alignItems: 'flex-start', gap: '10px',
-    padding: '10px 12px', cursor: 'pointer',
-    borderBottom: '1px solid #1E2535',
-  },
-  resultName: { color: '#fff', fontSize: '13px', fontWeight: '600' },
-  resultAddr: { color: '#A0AEC0', fontSize: '11px', marginTop: '2px' },
-  tabRow: {
-    display: 'flex', marginBottom: '12px',
-    borderBottom: '1px solid #1E2535',
-  },
-  tab: {
-    flex: 1, padding: '8px', background: 'none', border: 'none',
-    color: '#A0AEC0', fontSize: '13px', cursor: 'pointer',
-    borderBottom: '2px solid transparent', marginBottom: '-1px',
-  },
-  tabActive: { color: '#00E676', borderBottom: '2px solid #00E676', fontWeight: '700' },
-  placeItem: {
-    display: 'flex', alignItems: 'center', gap: '10px',
-    padding: '10px 8px', borderRadius: '8px', cursor: 'pointer',
-    marginBottom: '4px',
-  },
-  placeName: { color: '#fff', fontSize: '13px', fontWeight: '600' },
-  placeAddr: { color: '#A0AEC0', fontSize: '11px', marginTop: '2px' },
-  removeBtn: {
-    background: 'none', border: 'none',
-    color: '#A0AEC0', fontSize: '14px', cursor: 'pointer',
-  },
-  emptySmall: {
-    color: '#A0AEC0', fontSize: '13px',
-    textAlign: 'center', padding: '20px 0',
-  },
-  searchBtn: {
-    width: '100%', backgroundColor: '#00E676', border: 'none',
-    borderRadius: '10px', padding: '14px',
-    color: '#000', fontWeight: '700', fontSize: '15px', cursor: 'pointer',
-  },
-  routeCard: {
-    backgroundColor: '#0D1117', borderRadius: '10px',
-    padding: '12px', border: '1px solid #1E2535',
-    marginBottom: '8px', cursor: 'pointer',
-  },
-  routeCardActive: { border: '1px solid #00E676', backgroundColor: 'rgba(0,230,118,0.05)' },
-  routeTop: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' },
-  routeName: { color: '#fff', fontSize: '14px', fontWeight: '700', flex: 1 },
-  recommendBadge: {
-    backgroundColor: '#00E676', color: '#000',
-    fontSize: '10px', fontWeight: '700',
-    padding: '2px 8px', borderRadius: '4px',
-  },
-  scoreText: { fontSize: '13px', fontWeight: '700' },
-  routeScoreBar: {
-    width: '100%', height: '4px', backgroundColor: '#1E2535',
-    borderRadius: '2px', marginBottom: '8px', overflow: 'hidden',
-  },
-  routeDesc: { color: '#A0AEC0', fontSize: '12px' },
-  startBtn: {
-    width: '100%', backgroundColor: '#00E676', border: 'none',
-    borderRadius: '8px', padding: '12px',
-    color: '#000', fontWeight: '700', fontSize: '14px', cursor: 'pointer',
-  },
-  bookmarkBtn: {
-    flex: 1, backgroundColor: 'transparent',
-    border: '1px solid #00E676', borderRadius: '8px',
-    padding: '10px', color: '#00E676',
-    fontWeight: '600', fontSize: '13px', cursor: 'pointer',
-  },
-  resetBtn: {
-    flex: 1, backgroundColor: 'transparent',
-    border: '1px solid #2D3748', borderRadius: '8px',
-    padding: '10px', color: '#A0AEC0',
-    fontWeight: '600', fontSize: '13px', cursor: 'pointer',
-  },
-  safetyCard: {
-    position: 'absolute', top: '16px', right: '60px', zIndex: 10,
-    backgroundColor: '#161B27', borderRadius: '12px',
-    padding: '16px', border: '1px solid #1E2535', minWidth: '160px',
-  },
-  safetyTitle: { color: '#A0AEC0', fontSize: '11px', marginBottom: '4px' },
-  safetyScore: { fontSize: '22px', fontWeight: '800', marginBottom: '6px' },
-  safetyDesc: { color: '#A0AEC0', fontSize: '11px', lineHeight: '1.5' },
-  zoomControl: {
-    position: 'absolute', top: '16px', right: '16px',
-    zIndex: 10, display: 'flex', flexDirection: 'column', gap: '4px',
-  },
-  zoomBtn: {
-    width: '36px', height: '36px',
-    backgroundColor: '#161B27', border: '1px solid #2D3748',
-    borderRadius: '6px', color: '#fff', fontSize: '18px', cursor: 'pointer',
-  },
-  myLocationBtn: {
-    position: 'absolute', bottom: '32px', right: '16px',
-    zIndex: 10, width: '44px', height: '44px', borderRadius: '50%',
-    backgroundColor: '#161B27', border: '1px solid #2D3748',
-    color: '#fff', fontSize: '20px', cursor: 'pointer',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-  },
-}
+const inputStyle = { width: '100%', height: 42, padding: '0 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 13, color: 'var(--text-strong)', outline: 'none', fontFamily: 'inherit', marginBottom: 4 }

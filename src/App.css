@@ -1,3 +1,49 @@
+/* ============================================================
+   Light Safe · White & Blue 디자인 토큰
+   근거: claude.ai/design 산출물의 락(lock)된 토큰을 전역화.
+   모든 컴포넌트는 var(--token) 으로 참조한다.
+   ============================================================ */
+:root {
+  --blue-primary: #2563EB;
+  --blue-deep: #1E40AF;
+  --blue-tint: #EFF4FF;
+  --bg: #F7F9FC;
+  --surface: #FFFFFF;
+  --border: #E4E9F2;
+  --text-strong: #0F172A;
+  --text-muted: #64748B;
+  --danger: #E11D48;
+  --warning: #F59E0B;
+  --safe: #10B981;
+  --info: #2563EB;
+  --radius: 14px;
+  --shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
+
+  /* 지도 플레이스홀더용 (카카오맵 미로드시 폴백) */
+  --map-bg: #E8EEF6;
+  --map-base: #E9EEF6;
+  --map-line: #DBE3EF;
+  --map-road: #FBFCFE;
+  --map-park: #DDEBDE;
+}
+
+/* 야간 모드 — 루트 또는 셸 래퍼에 .ls-dark 부여 */
+.ls-dark {
+  --bg: #0B1220;
+  --surface: #111A2E;
+  --border: #1F2C48;
+  --text-strong: #F1F5F9;
+  --text-muted: #94A3B8;
+  --blue-tint: #16233F;
+  --blue-primary: #3B82F6;
+  --shadow: 0 4px 16px rgba(0, 0, 0, .5);
+  --map-bg: #0E1626;
+  --map-base: #0E1626;
+  --map-line: #182339;
+  --map-road: #1B2740;
+  --map-park: #12261F;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -8,16 +54,31 @@ html, body, #root {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  font-family: 'Pretendard', 'Noto Sans KR', sans-serif;
+  font-family: 'Pretendard', 'Inter', -apple-system, 'Noto Sans KR', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-strong);
+  background: var(--bg);
 }
 
-::-webkit-scrollbar {
-  width: 4px;
+a { color: var(--blue-primary); text-decoration: none; }
+a:hover { color: var(--blue-deep); }
+
+/* 공용 스크롤바 */
+.ls-scroll::-webkit-scrollbar { width: 8px; }
+.ls-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+.ls-scroll::-webkit-scrollbar-track { background: transparent; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+
+/* 공용 키프레임 */
+@keyframes ls-pulse { 0% { transform: scale(1); opacity: .55; } 70% { transform: scale(2.6); opacity: 0; } 100% { opacity: 0; } }
+@keyframes ls-blink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@keyframes ls-sos {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(225,29,72,.5), 0 10px 26px rgba(225,29,72,.5); }
+  50% { box-shadow: 0 0 0 16px rgba(225,29,72,0), 0 10px 26px rgba(225,29,72,.5); }
 }
-::-webkit-scrollbar-track {
-  background: #0D1117;
-}
-::-webkit-scrollbar-thumb {
-  background: #2D3748;
-  border-radius: 2px;
-}
+@keyframes ls-count { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 383; } }
+@keyframes ls-spin { to { transform: rotate(360deg); } }

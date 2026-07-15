@@ -19,7 +19,7 @@ async function fetchMarkerData() {
   }
 }
 
-export default function MapView({ filters, dangerZones = [], routeState = null }) {
+export default function MapView({ filters, onToggleFilter, dangerZones = [], routeState = null, searchTarget = null }) {
   const mapRef = useRef(null)
   const mapInstance = useRef(null)
   const clustererRef = useRef(null)
@@ -28,6 +28,8 @@ export default function MapView({ filters, dangerZones = [], routeState = null }
   const dangerZoneOverlaysRef = useRef([])
   const routePolylinesRef = useRef([])
   const routeMarkersRef = useRef([])
+  const searchMarkerRef = useRef(null)
+  const searchTargetRef = useRef(searchTarget) // 초기 지오로케이션이 검색 위치를 덮어쓰지 않도록 추적
 
   // 뷰포트 내 CCTV 마커 렌더링
   const renderCctvInBounds = useCallback(() => {
@@ -62,9 +64,9 @@ export default function MapView({ filters, dangerZones = [], routeState = null }
     dangerZoneOverlaysRef.current = []
 
     const LEVEL_COLOR = {
-      HIGH:   { stroke: '#FF3B3B' },
-      MEDIUM: { stroke: '#FF9500' },
-      LOW:    { stroke: '#FFD600' },
+      HIGH:   { stroke: '#E11D48' },
+      MEDIUM: { stroke: '#F59E0B' },
+      LOW:    { stroke: '#10B981' },
     }
 
     zones.filter(z => z.isActive).forEach(zone => {
@@ -213,8 +215,11 @@ export default function MapView({ filters, dangerZones = [], routeState = null }
         (pos) => {
           const { latitude, longitude } = pos.coords
           const latlng = new window.kakao.maps.LatLng(latitude, longitude)
-          mapInstance.current.setCenter(latlng)
-          mapInstance.current.setLevel(5)
+          // 검색으로 진입한 경우(다른 페이지에서 넘어옴)엔 현재 위치로 되돌리지 않는다
+          if (!searchTargetRef.current) {
+            mapInstance.current.setCenter(latlng)
+            mapInstance.current.setLevel(5)
+          }
 
           const content = `
             <div style="position:relative;width:24px;height:24px;">
@@ -288,85 +293,94 @@ export default function MapView({ filters, dangerZones = [], routeState = null }
     }
   }, [routeState, drawRouteOnMap])
 
+  // 컨테이너 크기 변화(우측 패널 접기/펼치기, 창 리사이즈) 시 지도 다시 그리기
+  useEffect(() => {
+    if (!mapRef.current || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      if (!mapInstance.current) return
+      requestAnimationFrame(() => {
+        mapInstance.current.relayout()
+        if (filters?.cctv) renderCctvInBounds()
+      })
+    })
+    ro.observe(mapRef.current)
+    return () => ro.disconnect()
+  }, [filters, renderCctvInBounds])
+
+  // 상단 장소 검색에서 선택한 위치로 이동 + 핀 표시
+  useEffect(() => {
+    searchTargetRef.current = searchTarget
+    if (!searchTarget || !mapInstance.current || !window.kakao) return
+    const latlng = new window.kakao.maps.LatLng(searchTarget.lat, searchTarget.lng)
+    mapInstance.current.setLevel(3)
+    mapInstance.current.setCenter(latlng)
+
+    searchMarkerRef.current?.setMap(null)
+    const content = `
+      <div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-4px);">
+        <div style="background:#2563EB;color:#fff;padding:5px 11px;border-radius:16px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 3px 10px rgba(37,99,235,0.4);">📍 ${searchTarget.name ?? '검색 위치'}</div>
+        <div style="width:2px;height:9px;background:#2563EB;"></div>
+      </div>
+    `
+    const overlay = new window.kakao.maps.CustomOverlay({ position: latlng, content, yAnchor: 1 })
+    overlay.setMap(mapInstance.current)
+    searchMarkerRef.current = overlay
+  }, [searchTarget])
+
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
       {routeState?.routeActive && (
         <div style={{
-          position: 'absolute', top: '70px', left: '50%',
+          position: 'absolute', top: '16px', left: '50%',
           transform: 'translateX(-50%)', zIndex: 10,
-          backgroundColor: 'rgba(0,230,118,0.95)',
-          borderRadius: '20px', padding: '8px 20px',
-          color: '#000', fontSize: '13px', fontWeight: '700',
-          boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
-          whiteSpace: 'nowrap',
+          background: 'var(--blue-primary)',
+          borderRadius: '20px', padding: '8px 18px',
+          color: '#fff', fontSize: '13px', fontWeight: 700,
+          boxShadow: 'var(--shadow)', whiteSpace: 'nowrap',
         }}>
           🧭 경로 안내 중 · CCTV {routeState.safetyScore}개 경유
         </div>
       )}
 
-      {/* 상단 검색바 */}
-      <div style={{
-        position: 'absolute', top: '16px', left: '50%',
-        transform: 'translateX(-50%)', zIndex: 10, width: '400px',
-      }}>
-        <div style={{
-          backgroundColor: '#fff', borderRadius: '24px',
-          padding: '10px 16px',
-          display: 'flex', alignItems: 'center', gap: '8px',
-          boxShadow: '0 2px 12px rgba(0,0,0,0.2)',
-        }}>
-          <span style={{ color: '#999', fontSize: '16px' }}>🔍</span>
-          <input
-            style={{
-              flex: 1, border: 'none', outline: 'none',
-              fontSize: '13px', color: '#333', backgroundColor: 'transparent',
-            }}
-            placeholder="위치, 장소 검색..."
-          />
-        </div>
-      </div>
-
-      {/* 범례 */}
-      <div style={{
-        position: 'absolute', top: '16px', left: '16px', zIndex: 10,
-        backgroundColor: 'rgba(13,17,23,0.9)',
-        borderRadius: '8px', padding: '10px 12px', border: '1px solid #1E2535',
-      }}>
+      {/* 레이어 칩 (좌상단) */}
+      <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 10, display: 'flex', gap: 8 }}>
         {[
-          { color: '#00E676', icon: '📷', label: 'CCTV' },
-          { color: '#FFD600', icon: '💡', label: '가로등' },
-          { color: '#00C853', icon: '🏪', label: '편의점' },
-          { color: '#FF3B3B', icon: '⚠️', label: '위험구역' },
-        ].map(item => (
-          <div key={item.label} style={{
-            display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px',
-          }}>
-            <span style={{
-              width: '16px', height: '16px', borderRadius: '50%',
-              backgroundColor: item.color, fontSize: '10px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              {item.icon}
-            </span>
-            <span style={{ color: '#fff', fontSize: '11px' }}>{item.label}</span>
-          </div>
-        ))}
+          { key: 'cctv', emoji: '📷', label: 'CCTV' },
+          { key: 'streetLamp', emoji: '💡', label: '가로등' },
+          { key: 'safeZone', emoji: '🛡️', label: '안전구역' },
+        ].map(ly => {
+          const on = !!filters?.[ly.key]
+          return (
+            <button
+              key={ly.key}
+              onClick={() => onToggleFilter?.(ly.key)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 13px',
+                borderRadius: 20, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', boxShadow: 'var(--shadow)',
+                border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
+                background: on ? 'var(--blue-primary)' : 'var(--surface)',
+                color: on ? '#fff' : 'var(--text-muted)', fontFamily: 'inherit',
+              }}
+            >
+              <span>{ly.emoji}</span><span>{ly.label}</span>
+            </button>
+          )
+        })}
       </div>
 
-      {/* 줌 컨트롤 */}
+      {/* 줌 컨트롤 (우하단) */}
       <div style={{
-        position: 'absolute', top: '16px', right: '16px', zIndex: 10,
-        display: 'flex', flexDirection: 'column', gap: '4px',
+        position: 'absolute', bottom: 20, right: 20, zIndex: 10, display: 'flex', flexDirection: 'column',
+        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 11, overflow: 'hidden', boxShadow: 'var(--shadow)',
       }}>
-        {['+', '−'].map(btn => (
+        {['+', '−'].map((btn, i) => (
           <button
             key={btn}
             style={{
-              width: '36px', height: '36px',
-              backgroundColor: '#161B27', border: '1px solid #2D3748',
-              borderRadius: '6px', color: '#fff', fontSize: '18px', cursor: 'pointer',
+              width: 40, height: 40, border: 'none', borderBottom: i === 0 ? '1px solid var(--border)' : 'none',
+              background: 'transparent', cursor: 'pointer', fontSize: 19, color: 'var(--text-strong)',
             }}
             onClick={() => {
               if (!mapInstance.current) return
@@ -379,14 +393,15 @@ export default function MapView({ filters, dangerZones = [], routeState = null }
         ))}
       </div>
 
-      {/* 현재 위치 버튼 */}
+      {/* 현재 위치 버튼 (줌 위) */}
       <button
+        title="현재 위치로"
         style={{
-          position: 'absolute', bottom: '32px', right: '16px', zIndex: 10,
-          width: '40px', height: '40px', borderRadius: '50%',
-          backgroundColor: '#161B27', border: '1px solid #2D3748',
-          color: '#fff', fontSize: '18px', cursor: 'pointer',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+          position: 'absolute', bottom: 108, right: 20, zIndex: 10,
+          width: 40, height: 40, borderRadius: 11,
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          color: 'var(--blue-primary)', cursor: 'pointer', boxShadow: 'var(--shadow)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
         onClick={() => {
           navigator.geolocation?.getCurrentPosition(pos => {
@@ -398,7 +413,7 @@ export default function MapView({ filters, dangerZones = [], routeState = null }
           })
         }}
       >
-        🎯
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3.2" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" strokeLinecap="round" /></svg>
       </button>
     </div>
   )

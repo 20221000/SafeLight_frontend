@@ -1,19 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import Sidebar from '../components/Sidebar/Sidebar'
-import SidebarToggleBtn from '../components/Sidebar/SidebarToggleBtn'
-import { useNavigation } from '../hooks/useNavigation'
-import { useSidebar } from '../hooks/useSidebar'
+import UserShell from '../components/layout/UserShell'
 
+// NOTICE(공지)는 관리자 전용이라 제외. REPORT는 커뮤니티 '안전 신고' 글(원클릭 긴급신고와 무관).
 const CATEGORIES = ['INFO', 'QUESTION', 'REPORT', 'TIP']
-const CATEGORY_LABEL = {
-  'INFO': '정보', 'QUESTION': '질문', 'REPORT': '제보', 'TIP': '팁',
-}
+const CATEGORY_LABEL = { INFO: '정보', QUESTION: '질문', REPORT: '안전 신고', TIP: '팁' }
 
 export default function PostWritePage({ user, onLogout }) {
   const navigate = useNavigate()
-  const handleNavigate = useNavigation()
-  const { sidebarOpen, setSidebarOpen } = useSidebar()
   const fileInputRef = useRef(null)
 
   const [category, setCategory] = useState('INFO')
@@ -24,230 +18,136 @@ export default function PostWritePage({ user, onLogout }) {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!user) {
-      alert('로그인이 필요합니다.')
-      navigate('/login')
-    }
+    if (!user) { alert('로그인이 필요합니다.'); navigate('/login') }
   }, [user])
 
-  const handleFileChange = (e) => {
-    const selected = Array.from(e.target.files)
-    setFiles(prev => [...prev, ...selected])
-  }
-
+  const handleFileChange = (e) => setFiles(prev => [...prev, ...Array.from(e.target.files)])
   const handleDrop = (e) => {
-    e.preventDefault()
-    setIsDragging(false)
-    const dropped = Array.from(e.dataTransfer.files)
-    setFiles(prev => [...prev, ...dropped])
+    e.preventDefault(); setIsDragging(false)
+    setFiles(prev => [...prev, ...Array.from(e.dataTransfer.files)])
   }
 
   const handleSubmit = async () => {
     if (!user) { alert('로그인이 필요합니다.'); navigate('/login'); return }
     if (!title.trim()) { alert('제목을 입력해주세요.'); return }
     if (!content.trim()) { alert('내용을 입력해주세요.'); return }
-
     setLoading(true)
     const token = localStorage.getItem('accessToken')
-
     try {
       if (files.length > 0) {
-        // 파일 첨부 있을 때
         const formData = new FormData()
         formData.append('title', title)
         formData.append('content', content)
         formData.append('category', category)
         formData.append('userId', user.userId)
         files.forEach(file => formData.append('files', file))
-
-        const res = await fetch('/posts/with-files', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData,
-        })
+        const res = await fetch('/posts/with-files', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData })
         const json = await res.json()
         if (!json.success) { alert('게시글 등록에 실패했습니다.'); return }
       } else {
-        // 파일 없을 때
         const res = await fetch('/posts', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            title,
-            content,
-            category,
-            userId: user.userId,
-          }),
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ title, content, category, userId: user.userId }),
         })
         const json = await res.json()
         if (!json.success) { alert('게시글 등록에 실패했습니다.'); return }
       }
-
       navigate('/community')
-
-    } catch (err) {
+    } catch {
       alert('서버 연결에 실패했습니다.')
     } finally {
       setLoading(false)
     }
   }
 
-  const s = styles
-
   return (
-    <div style={{
-      display: 'flex', height: '100vh', width: '100vw',
-      overflow: 'hidden', backgroundColor: '#0D1117', position: 'relative',
-    }}>
-      <Sidebar
-        filters={{ cctv: true, streetLamp: true, safeZone: true }}
-        onFilterChange={() => {}}
-        user={user}
-        onLogout={onLogout}
-        onGoLogin={() => navigate('/login')}
-        onNavigate={handleNavigate}
-        activePage="community"
-        isOpen={sidebarOpen}
-      />
-      <SidebarToggleBtn isOpen={sidebarOpen} onClick={() => setSidebarOpen(prev => !prev)} />
-
-      <main style={s.main}>
-        <div style={s.topBar}>
-          <button style={s.backBtn} onClick={() => navigate('/community')}>← 목록으로</button>
-          <h2 style={s.pageTitle}>게시글 작성</h2>
+    <UserShell user={user} onLogout={onLogout} active="community">
+      <div style={{ maxWidth: 760, margin: '0 auto', padding: '26px 30px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
+          <button onClick={() => navigate('/community')} style={{ display: 'flex', alignItems: 'center', gap: 5, border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>목록으로
+          </button>
+          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.4px' }}>게시글 작성</div>
         </div>
 
-        <div style={s.scrollArea}>
-          <div style={s.formCard}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 26 }}>
+          {/* 카테고리 */}
+          <div style={{ marginBottom: 22 }}>
+            <label style={labelStyle}>카테고리</label>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {CATEGORIES.map(cat => {
+                const on = category === cat
+                return (
+                  <button key={cat} onClick={() => setCategory(cat)} style={{
+                    padding: '9px 20px', borderRadius: 10, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
+                    border: `1px solid ${on ? 'transparent' : 'var(--border)'}`, background: on ? 'var(--blue-primary)' : 'var(--bg)',
+                    color: on ? '#fff' : 'var(--text-muted)', fontWeight: on ? 700 : 500,
+                  }}>{CATEGORY_LABEL[cat]}</button>
+                )
+              })}
+            </div>
+          </div>
 
-            <div style={s.fieldRow}>
-              <label style={s.label}>카테고리</label>
-              <div style={s.categoryRow}>
-                {CATEGORIES.map(cat => (
-                  <button
-                    key={cat}
-                    style={{ ...s.categoryBtn, ...(category === cat ? s.categoryBtnActive : {}) }}
-                    onClick={() => setCategory(cat)}
-                  >
-                    {CATEGORY_LABEL[cat]}
-                  </button>
+          {/* 제목 */}
+          <div style={{ marginBottom: 22 }}>
+            <label style={labelStyle}>제목</label>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <input value={title} maxLength={100} onChange={e => setTitle(e.target.value)} placeholder="제목을 입력해주세요"
+                style={{ flex: 1, height: 46, padding: '0 92px 0 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 11, fontSize: 14, color: 'var(--text-strong)', outline: 'none', fontFamily: 'inherit' }} />
+              <span style={{ position: 'absolute', right: 14, fontSize: 12, color: 'var(--text-muted)', fontFamily: "'Inter',sans-serif" }}>{title.length} / 100</span>
+            </div>
+          </div>
+
+          {/* 내용 */}
+          <div style={{ marginBottom: 22 }}>
+            <label style={labelStyle}>내용</label>
+            <div style={{ position: 'relative' }}>
+              <textarea value={content} maxLength={5000} onChange={e => setContent(e.target.value)} placeholder="내용을 입력해주세요."
+                style={{ width: '100%', minHeight: 280, padding: '14px 16px 34px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 11, fontSize: 14, color: 'var(--text-strong)', outline: 'none', resize: 'vertical', lineHeight: 1.7, fontFamily: 'inherit' }} />
+              <span style={{ position: 'absolute', bottom: 12, right: 16, fontSize: 12, color: 'var(--text-muted)', fontFamily: "'Inter',sans-serif" }}>{content.length} / 5000</span>
+            </div>
+          </div>
+
+          {/* 첨부파일 */}
+          <div>
+            <label style={labelStyle}>첨부파일</label>
+            <div
+              onClick={() => fileInputRef.current.click()}
+              onDrop={handleDrop}
+              onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
+              onDragLeave={() => setIsDragging(false)}
+              style={{
+                border: `1.5px dashed ${isDragging ? 'var(--blue-primary)' : 'var(--border)'}`, borderRadius: 12, padding: '36px 20px',
+                textAlign: 'center', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                background: isDragging ? 'var(--blue-tint)' : 'var(--bg)',
+              }}
+            >
+              <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/gif" style={{ display: 'none' }} onChange={handleFileChange} />
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--blue-primary)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M17 8l-5-5-5 5" /><path d="M12 3v12" /></svg>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>파일을 드래그하거나 클릭하여 업로드</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>JPG, PNG, GIF (최대 10MB)</div>
+            </div>
+            {files.length > 0 && (
+              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {files.map((file, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 13px' }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>📎 {file.name}</span>
+                    <button onClick={() => setFiles(prev => prev.filter((_, i) => i !== idx))} style={{ border: 'none', background: 'transparent', color: 'var(--danger)', fontSize: 14, cursor: 'pointer' }}>✕</button>
+                  </div>
                 ))}
               </div>
-            </div>
-
-            <div style={s.fieldRow}>
-              <label style={s.label}>제목</label>
-              <div style={s.inputWrapper}>
-                <input
-                  style={s.titleInput}
-                  placeholder="제목을 입력해주세요"
-                  value={title}
-                  maxLength={100}
-                  onChange={e => setTitle(e.target.value)}
-                />
-                <span style={s.charCount}>{title.length} / 100</span>
-              </div>
-            </div>
-
-            <div style={s.fieldRow}>
-              <label style={s.label}>내용</label>
-              <div style={{ position: 'relative' }}>
-                <textarea
-                  style={s.textarea}
-                  placeholder="내용을 입력해주세요."
-                  value={content}
-                  maxLength={5000}
-                  onChange={e => setContent(e.target.value)}
-                />
-                <span style={s.textareaCount}>{content.length} / 5000</span>
-              </div>
-            </div>
-
-            <div style={s.fieldRow}>
-              <label style={s.label}>첨부파일</label>
-              <div
-                style={{ ...s.dropzone, ...(isDragging ? s.dropzoneActive : {}) }}
-                onClick={() => fileInputRef.current.click()}
-                onDrop={handleDrop}
-                onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
-                onDragLeave={() => setIsDragging(false)}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept="image/jpeg,image/png,image/gif"
-                  style={{ display: 'none' }}
-                  onChange={handleFileChange}
-                />
-                <span style={{ fontSize: '32px', marginBottom: '8px' }}>☁️</span>
-                <span style={s.dropzoneText}>파일을 드래그하거나 클릭하여 업로드</span>
-                <span style={s.dropzoneHint}>JPG, PNG, GIF (최대 10MB)</span>
-              </div>
-
-              {files.length > 0 && (
-                <div style={s.fileList}>
-                  {files.map((file, idx) => (
-                    <div key={idx} style={s.fileItem}>
-                      <span style={s.fileName}>📎 {file.name}</span>
-                      <button
-                        style={s.fileRemoveBtn}
-                        onClick={() => setFiles(prev => prev.filter((_, i) => i !== idx))}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div style={s.bottomRow}>
-            <button style={s.cancelBtn} onClick={() => navigate('/community')}>취소</button>
-            <button
-              style={{ ...s.submitBtn, opacity: loading ? 0.7 : 1 }}
-              onClick={handleSubmit}
-              disabled={loading}
-            >
-              {loading ? '등록 중...' : '등록하기'}
-            </button>
+            )}
           </div>
         </div>
-      </main>
-    </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+          <button onClick={() => navigate('/community')} style={{ height: 46, padding: '0 24px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>취소</button>
+          <button onClick={handleSubmit} disabled={loading} style={{ height: 46, padding: '0 32px', borderRadius: 12, border: 'none', background: 'var(--blue-primary)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? .7 : 1, fontFamily: 'inherit' }}>{loading ? '등록 중...' : '등록하기'}</button>
+        </div>
+      </div>
+    </UserShell>
   )
 }
 
-const styles = {
-  main: { flex: 1, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '24px 28px' },
-  topBar: { display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px' },
-  backBtn: { background: 'none', border: 'none', color: '#A0AEC0', fontSize: '14px', cursor: 'pointer', padding: 0 },
-  pageTitle: { color: '#fff', fontSize: '22px', fontWeight: '700', margin: 0 },
-  scrollArea: { flex: 1, overflowY: 'auto' },
-  formCard: { backgroundColor: '#161B27', borderRadius: '12px', padding: '28px', border: '1px solid #1E2535', marginBottom: '16px' },
-  fieldRow: { marginBottom: '24px' },
-  label: { display: 'block', color: '#A0AEC0', fontSize: '13px', fontWeight: '600', marginBottom: '10px' },
-  categoryRow: { display: 'flex', gap: '10px' },
-  categoryBtn: { padding: '10px 24px', borderRadius: '8px', border: '1px solid #2D3748', backgroundColor: '#0D1117', color: '#A0AEC0', fontSize: '14px', cursor: 'pointer' },
-  categoryBtnActive: { backgroundColor: '#00E676', border: '1px solid #00E676', color: '#000', fontWeight: '700' },
-  inputWrapper: { position: 'relative', display: 'flex', alignItems: 'center' },
-  titleInput: { flex: 1, backgroundColor: '#0D1117', border: '1px solid #2D3748', borderRadius: '8px', padding: '12px 90px 12px 16px', color: '#fff', fontSize: '14px', outline: 'none', boxSizing: 'border-box' },
-  charCount: { position: 'absolute', right: '16px', color: '#A0AEC0', fontSize: '12px' },
-  textarea: { width: '100%', minHeight: '280px', backgroundColor: '#0D1117', border: '1px solid #2D3748', borderRadius: '8px', padding: '14px 16px 32px 16px', color: '#fff', fontSize: '14px', outline: 'none', resize: 'vertical', lineHeight: '1.7', boxSizing: 'border-box', fontFamily: 'inherit' },
-  textareaCount: { position: 'absolute', bottom: '12px', right: '16px', color: '#A0AEC0', fontSize: '12px' },
-  dropzone: { border: '1.5px dashed #2D3748', borderRadius: '10px', padding: '40px 20px', textAlign: 'center', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center' },
-  dropzoneActive: { borderColor: '#00E676', backgroundColor: 'rgba(0,230,118,0.05)' },
-  dropzoneText: { color: '#fff', fontSize: '14px', fontWeight: '500', marginBottom: '6px' },
-  dropzoneHint: { color: '#A0AEC0', fontSize: '12px' },
-  fileList: { marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' },
-  fileItem: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#0D1117', borderRadius: '6px', padding: '8px 12px', border: '1px solid #1E2535' },
-  fileName: { color: '#A0AEC0', fontSize: '13px' },
-  fileRemoveBtn: { background: 'none', border: 'none', color: '#FF3B3B', fontSize: '14px', cursor: 'pointer' },
-  bottomRow: { display: 'flex', justifyContent: 'flex-end', gap: '10px', paddingBottom: '24px' },
-  cancelBtn: { padding: '12px 24px', borderRadius: '8px', backgroundColor: 'transparent', border: '1px solid #2D3748', color: '#A0AEC0', fontSize: '14px', cursor: 'pointer' },
-  submitBtn: { padding: '12px 32px', borderRadius: '8px', backgroundColor: '#00E676', border: 'none', color: '#000', fontSize: '14px', fontWeight: '700', cursor: 'pointer' },
-}
+const labelStyle = { display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10 }

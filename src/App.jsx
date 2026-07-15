@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Routes, Route, useNavigate } from 'react-router-dom'
 import MainPage from './pages/MainPage'
 import LoginPage from './pages/LoginPage'
@@ -6,6 +6,7 @@ import RegisterPage from './pages/RegisterPage'
 import RoutePage from './pages/RoutePage'
 import CommunityPage from './pages/CommunityPage'
 import MyInfoPage from './pages/MyInfoPage'
+import FriendsPage from './pages/FriendsPage'
 import PostDetailPage from './pages/PostDetailPage'
 import PostWritePage from './pages/PostWritePage'
 import AdminDashboardPage from './pages/AdminDashboardPage'
@@ -13,7 +14,6 @@ import AdminUserPage from './pages/AdminUserPage'
 import AdminReportPage from './pages/AdminReportPage'
 import AdminDangerZonePage from './pages/AdminDangerZonePage'
 import AdminNoticePage from './pages/AdminNoticePage'
-import AdminSystemLogPage from './pages/AdminSystemLogPage'
 import './App.css'
 
 function AppRoutes() {
@@ -37,6 +37,15 @@ function AppRoutes() {
     setUser(null)
     localStorage.removeItem('user')
     localStorage.removeItem('accessToken')
+  }
+
+  // 프로필 일부 변경 시 앱 상태 + localStorage 동기화 (상단바/아바타 즉시 반영)
+  const handleUpdateUser = (patch) => {
+    setUser(prev => {
+      const next = { ...prev, ...patch }
+      localStorage.setItem('user', JSON.stringify(next))
+      return next
+    })
   }
 
   return (
@@ -65,13 +74,13 @@ function AppRoutes() {
       <Route path="/community" element={<CommunityPage user={user} onLogout={handleLogout} />} />
       <Route path="/community/write" element={<PostWritePage user={user} onLogout={handleLogout} />} />
       <Route path="/community/:postId" element={<PostDetailPage user={user} onLogout={handleLogout} />} />
-      <Route path="/myinfo" element={<MyInfoPage user={user} onLogout={handleLogout} />} />
-      <Route path="/admin" element={<AdminDashboardPage user={user} />} />
-      <Route path="/admin/users" element={<AdminUserPage user={user} />} />
-      <Route path="/admin/reports" element={<AdminReportPage user={user} />} />
-      <Route path="/admin/dangerzones" element={<AdminDangerZonePage user={user} />} />
-      <Route path="/admin/notices" element={<AdminNoticePage user={user} />} />
-      <Route path="/admin/systemlog" element={<AdminSystemLogPage user={user} />} />
+      <Route path="/myinfo" element={<MyInfoPage user={user} onLogout={handleLogout} onUpdateUser={handleUpdateUser} />} />
+      <Route path="/myinfo/friends" element={<FriendsPage user={user} onLogout={handleLogout} />} />
+      <Route path="/admin" element={<AdminDashboardPage user={user} onLogout={handleLogout} />} />
+      <Route path="/admin/users" element={<AdminUserPage user={user} onLogout={handleLogout} />} />
+      <Route path="/admin/reports" element={<AdminReportPage user={user} onLogout={handleLogout} />} />
+      <Route path="/admin/dangerzones" element={<AdminDangerZonePage user={user} onLogout={handleLogout} />} />
+      <Route path="/admin/notices" element={<AdminNoticePage user={user} onLogout={handleLogout} />} />
     </Routes>
   )
 }

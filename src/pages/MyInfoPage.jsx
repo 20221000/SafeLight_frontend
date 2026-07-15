@@ -1,450 +1,267 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import Sidebar from '../components/Sidebar/Sidebar'
-import SidebarToggleBtn from '../components/Sidebar/SidebarToggleBtn'
-import { useNavigation } from '../hooks/useNavigation'
-import { useSidebar } from '../hooks/useSidebar'
+import UserShell from '../components/layout/UserShell'
+import { apiGet, apiSend } from '../utils/adminApi'
 
-const EMPTY_STATE = {
-  profile: null,
-  friends: [],
-  friendRequests: [],
-  favoritePlaces: [],
-  recentRoutes: [],
-  reportStats: null,
-}
-
-const PLACE_ICONS = {
-  HOME: '🏠', SCHOOL: '🏫', WORK: '💼', ETC: '📍',
-}
-
-export default function MyInfoPage({ user, onLogout }) {
-  const navigate = useNavigate()
-  const handleNavigate = useNavigation()
-  const { sidebarOpen, setSidebarOpen } = useSidebar()
-
-  const [nicknameInput, setNicknameInput] = useState('')
-  const [currentPw, setCurrentPw] = useState('')
-  const [newPw, setNewPw] = useState('')
-  const [showCurrentPw, setShowCurrentPw] = useState(false)
-  const [showNewPw, setShowNewPw] = useState(false)
-  const [friendSearch, setFriendSearch] = useState('')
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-
-  const { profile, friends, friendRequests, favoritePlaces, recentRoutes, reportStats } = EMPTY_STATE
-
-  const handleNicknameChange = async () => {
-    if (!nicknameInput.trim()) { alert('닉네임을 입력해주세요.'); return }
-    // PUT /users/{userId} 연동 시 주석 해제
-    // await fetch(`/users/${user.userId}`, {
-    //   method: 'PUT',
-    //   headers: { 'Content-Type': 'application/json',
-    //     'Authorization': `Bearer ${localStorage.getItem('accessToken')}` },
-    //   body: JSON.stringify({ nickname: nicknameInput }),
-    // })
-    alert('닉네임이 변경되었습니다.')
-    setNicknameInput('')
-  }
-
-  const handlePasswordChange = async () => {
-    if (!currentPw || !newPw) { alert('비밀번호를 입력해주세요.'); return }
-    if (newPw.length < 6) { alert('비밀번호는 6자 이상이어야 합니다.'); return }
-    // PUT /users/{userId} 연동 시 주석 해제
-    alert('비밀번호가 변경되었습니다.')
-    setCurrentPw(''); setNewPw('')
-  }
-
-  const handleDeleteAccount = async () => {
-    // DELETE /users/{userId} 연동 시 주석 해제
-    alert('회원 탈퇴가 완료되었습니다.')
-    onLogout()
-    navigate('/')
-  }
-
-  const handleEmergencyToggle = (friendId) => {
-    // PUT /friends/{friendId}/emergency-allow 연동 시 구현
-  }
-
-  const handleFriendAccept = (requestId) => {
-    // PUT /friends/requests/{requestId}/accept 연동 시 구현
-  }
-
-  const handleFriendReject = (requestId) => {
-    // PUT /friends/requests/{requestId}/reject 연동 시 구현
-  }
-
-  const handleDeletePlace = (placeId) => {
-    // DELETE /favorite-places/{placeId} 연동 시 구현
-  }
-
-  const handleDeleteAllRoutes = () => {
-    // DELETE /route-history 연동 시 구현
-  }
-
-  const handleRouteAgain = (route) => {
-    navigate('/')
-  }
-
-  const s = styles
-  const avatarChar = user?.nickname?.charAt(0) ?? profile?.nickname?.charAt(0) ?? '?'
-
+function Card({ title, desc, children }) {
   return (
-    <div style={{
-      display: 'flex', height: '100vh', width: '100vw',
-      overflow: 'hidden', backgroundColor: '#0D1117', position: 'relative',
-    }}>
-
-      <Sidebar
-        filters={{ cctv: true, streetLamp: true, safeZone: true }}
-        onFilterChange={() => {}}
-        user={user}
-        onLogout={onLogout}
-        onGoLogin={() => navigate('/login')}
-        onNavigate={handleNavigate}
-        activePage="myinfo"
-        isOpen={sidebarOpen}
-      />
-      <SidebarToggleBtn isOpen={sidebarOpen} onClick={() => setSidebarOpen(prev => !prev)} />
-
-      <main style={s.main}>
-        <h2 style={s.pageTitle}>내 정보</h2>
-        <div style={s.divider} />
-
-        <div style={s.scrollArea}>
-          <div style={s.grid}>
-
-            {/* 좌측 컬럼 */}
-            <div style={s.leftCol}>
-
-              <div style={s.card}>
-                <div style={s.cardTitle}>프로필 정보</div>
-                <div style={s.profileRow}>
-                  <div style={s.avatarLg}>{avatarChar}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={s.profileName}>
-                      {user?.nickname ?? profile?.nickname ?? '로그인이 필요합니다'}
-                    </div>
-                    <div style={s.profileSub}>@{user?.username ?? profile?.username ?? '-'}</div>
-                    <div style={s.profileSub}>{profile?.email ?? '-'}</div>
-                  </div>
-                  <button style={s.outlineBtn}>프로필 수정</button>
-                </div>
-              </div>
-
-              <div style={s.card}>
-                <div style={s.cardTitle}>계정 설정</div>
-
-                <div style={s.settingSection}>
-                  <div style={s.settingLabel}>닉네임 변경</div>
-                  <div style={s.settingRow}>
-                    <span style={s.settingCurrent}>
-                      현재 닉네임 &nbsp;
-                      <span style={{ color: '#fff' }}>{user?.nickname ?? '-'}</span>
-                    </span>
-                    <input
-                      style={s.settingInput}
-                      placeholder="새 닉네임을 입력해주세요"
-                      value={nicknameInput}
-                      onChange={e => setNicknameInput(e.target.value)}
-                    />
-                    <button style={s.mintBtn} onClick={handleNicknameChange}>변경</button>
-                  </div>
-                </div>
-
-                <div style={s.sectionDivider} />
-
-                <div style={s.settingSection}>
-                  <div style={s.settingLabel}>비밀번호 변경</div>
-                  <div style={s.settingRow}>
-                    <span style={s.settingCurrent}>현재 비밀번호</span>
-                    <div style={s.pwInputWrapper}>
-                      <input
-                        style={s.settingInput}
-                        type={showCurrentPw ? 'text' : 'password'}
-                        placeholder="현재 비밀번호 입력"
-                        value={currentPw}
-                        onChange={e => setCurrentPw(e.target.value)}
-                      />
-                      <button style={s.eyeBtn} onClick={() => setShowCurrentPw(p => !p)}>
-                        {showCurrentPw ? '🙈' : '👁️'}
-                      </button>
-                    </div>
-                  </div>
-                  <div style={{ ...s.settingRow, marginTop: '8px' }}>
-                    <span style={s.settingCurrent}>새 비밀번호</span>
-                    <div style={s.pwInputWrapper}>
-                      <input
-                        style={s.settingInput}
-                        type={showNewPw ? 'text' : 'password'}
-                        placeholder="새 비밀번호 입력"
-                        value={newPw}
-                        onChange={e => setNewPw(e.target.value)}
-                      />
-                      <button style={s.eyeBtn} onClick={() => setShowNewPw(p => !p)}>
-                        {showNewPw ? '🙈' : '👁️'}
-                      </button>
-                    </div>
-                    <button style={s.mintBtn} onClick={handlePasswordChange}>변경</button>
-                  </div>
-                </div>
-
-                <div style={s.sectionDivider} />
-
-                <div style={s.settingSection}>
-                  <div style={s.settingLabel}>회원 탈퇴</div>
-                  <div style={s.settingRow}>
-                    <span style={{ color: '#FF3B3B', fontSize: '13px', flex: 1 }}>
-                      탈퇴 시 모든 정보가 삭제되며 복구할 수 없습니다.
-                    </span>
-                    <button style={s.dangerBtn} onClick={() => setShowDeleteConfirm(true)}>
-                      탈퇴하기
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 우측 컬럼 */}
-            <div style={s.rightCol}>
-
-              <div style={s.card}>
-                <div style={s.cardHeaderRow}>
-                  <div style={s.cardTitle}>친구 관리</div>
-                  <span style={s.countBadge}>{friends.length}명</span>
-                  <div style={{ flex: 1 }} />
-                  <div style={s.friendSearchBox}>
-                    <input
-                      style={s.friendSearchInput}
-                      placeholder="친구 검색"
-                      value={friendSearch}
-                      onChange={e => setFriendSearch(e.target.value)}
-                    />
-                    <span style={{ color: '#A0AEC0', fontSize: '14px' }}>🔍</span>
-                  </div>
-                </div>
-
-                {friends.length > 0 ? (
-                  friends.filter(f => f.nickname.includes(friendSearch)).map(friend => (
-                    <div key={friend.friendId} style={s.friendItem}>
-                      <div style={{ ...s.friendAvatar }}>
-                        {friend.nickname.charAt(0)}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <span style={s.friendName}>{friend.nickname}</span>
-                        <span style={s.friendUsername}>@{friend.username}</span>
-                      </div>
-                      <span style={{
-                        fontSize: '11px',
-                        color: friend.isEmergencyAllowed ? '#00E676' : '#A0AEC0',
-                        marginRight: '8px',
-                      }}>
-                        긴급공유 {friend.isEmergencyAllowed ? 'ON' : 'OFF'}
-                      </span>
-                      <Toggle
-                        checked={friend.isEmergencyAllowed}
-                        onChange={() => handleEmergencyToggle(friend.friendId)}
-                      />
-                    </div>
-                  ))
-                ) : (
-                  <div style={s.emptySmall}>친구 목록이 없습니다.</div>
-                )}
-
-                {friendRequests.length > 0 && (
-                  <>
-                    <div style={{ ...s.sectionDivider, margin: '12px 0' }} />
-                    <div style={s.cardHeaderRow}>
-                      <span style={s.settingLabel}>친구 요청</span>
-                      <span style={s.countBadge}>{friendRequests.length}</span>
-                    </div>
-                    {friendRequests.map(req => (
-                      <div key={req.requestId} style={s.friendItem}>
-                        <div style={s.friendAvatar}>{req.nickname.charAt(0)}</div>
-                        <div style={{ flex: 1 }}>
-                          <span style={s.friendName}>{req.nickname}</span>
-                        </div>
-                        <button style={s.mintBtn} onClick={() => handleFriendAccept(req.requestId)}>수락</button>
-                        <button style={{ ...s.grayBtn, marginLeft: '6px' }} onClick={() => handleFriendReject(req.requestId)}>거절</button>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-
-              <div style={s.twoColRow}>
-
-                <div style={s.card}>
-                  <div style={s.cardHeaderRow}>
-                    <div style={s.cardTitle}>즐겨찾기 장소</div>
-                    <button style={s.smallMintBtn}>추가</button>
-                  </div>
-                  {favoritePlaces.length > 0 ? (
-                    favoritePlaces.map(place => (
-                      <div key={place.favoritePlaceId} style={s.placeItem}>
-                        <span style={{ fontSize: '18px' }}>{PLACE_ICONS[place.placeType] ?? '📍'}</span>
-                        <div style={{ flex: 1 }}>
-                          <div style={s.placeName}>{place.placeName}</div>
-                          <div style={s.placeAddr}>{place.address}</div>
-                        </div>
-                        <button style={s.removeBtn} onClick={() => handleDeletePlace(place.favoritePlaceId)}>✕</button>
-                      </div>
-                    ))
-                  ) : (
-                    <div style={s.emptySmall}>즐겨찾기 장소가 없습니다.</div>
-                  )}
-                </div>
-
-                <div style={s.card}>
-                  <div style={s.cardHeaderRow}>
-                    <div style={s.cardTitle}>최근 경로</div>
-                    {recentRoutes.length > 0 && (
-                      <button style={s.dangerTextBtn} onClick={handleDeleteAllRoutes}>전체 삭제</button>
-                    )}
-                  </div>
-                  {recentRoutes.length > 0 ? (
-                    recentRoutes.map(route => (
-                      <div key={route.routeHistoryId} style={s.routeItem}>
-                        <div style={{ flex: 1 }}>
-                          <div style={s.routeName}>{route.routeName}</div>
-                          <div style={s.routeDate}>{route.searchedAt}</div>
-                        </div>
-                        <button style={s.smallMintBtn} onClick={() => handleRouteAgain(route)}>
-                          다시 찾기
-                        </button>
-                      </div>
-                    ))
-                  ) : (
-                    <div style={s.emptySmall}>최근 경로가 없습니다.</div>
-                  )}
-                </div>
-              </div>
-
-              <div style={s.card}>
-                <div style={s.cardTitle}>내 신고 내역</div>
-                <div style={s.reportRow}>
-                  <div style={s.reportBox}>
-                    <div style={s.reportLabel}>총 신고 횟수</div>
-                    <div style={s.reportValue}>{reportStats?.totalReports ?? '-'}회</div>
-                  </div>
-                  <div style={s.reportBox}>
-                    <div style={s.reportLabel}>허위신고 횟수</div>
-                    <div style={{
-                      ...s.reportValue,
-                      color: reportStats?.fakeReports > 0 ? '#FF3B3B' : '#fff',
-                    }}>
-                      {reportStats?.fakeReports ?? '-'}회
-                    </div>
-                  </div>
-                </div>
-                {reportStats?.fakeReports >= 2 && (
-                  <div style={s.warningBox}>
-                    ⚠️ 허위신고가 2회 이상일 경우 서비스 이용에 제한이 발생할 수 있습니다.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </main>
-
-      {showDeleteConfirm && (
-        <div style={s.modalBg}>
-          <div style={s.modal}>
-            <div style={{ fontSize: '36px', marginBottom: '12px' }}>⚠️</div>
-            <div style={s.modalTitle}>정말 탈퇴하시겠습니까?</div>
-            <div style={s.modalDesc}>탈퇴 시 모든 정보가 삭제되며<br />복구할 수 없습니다.</div>
-            <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-              <button
-                style={{ ...s.grayBtn, flex: 1, padding: '12px' }}
-                onClick={() => setShowDeleteConfirm(false)}
-              >
-                취소
-              </button>
-              <button
-                style={{ ...s.dangerBtn, flex: 1, padding: '12px' }}
-                onClick={handleDeleteAccount}
-              >
-                탈퇴하기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 22 }}>
+      <div style={{ fontSize: 15.5, fontWeight: 700 }}>{title}</div>
+      {desc && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 3 }}>{desc}</div>}
+      <div style={{ marginTop: 16 }}>{children}</div>
     </div>
   )
+}
+
+function Field({ label, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 7 }}>{label}</label>
+      {children}
+    </div>
+  )
+}
+
+const inputStyle = {
+  width: '100%', height: 44, padding: '0 14px', background: 'var(--bg)', border: '1px solid var(--border)',
+  borderRadius: 11, fontSize: 14, color: 'var(--text-strong)', outline: 'none', fontFamily: 'inherit',
 }
 
 function Toggle({ checked, onChange }) {
   return (
     <div onClick={onChange} style={{
-      width: '36px', height: '20px', borderRadius: '10px',
-      backgroundColor: checked ? '#00E676' : '#374151',
-      cursor: 'pointer', position: 'relative',
-      transition: 'background-color 0.2s', flexShrink: 0,
+      width: 42, height: 24, borderRadius: 12, background: checked ? 'var(--blue-primary)' : 'var(--border)',
+      cursor: 'pointer', position: 'relative', transition: 'background .2s', flexShrink: 0,
     }}>
       <div style={{
-        position: 'absolute', top: '2px',
-        left: checked ? '18px' : '2px',
-        width: '16px', height: '16px', borderRadius: '50%',
-        backgroundColor: '#fff', transition: 'left 0.2s',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+        position: 'absolute', top: 2, left: checked ? 20 : 2, width: 20, height: 20, borderRadius: '50%',
+        background: '#fff', transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)',
       }} />
     </div>
   )
 }
 
-const styles = {
-  main: { flex: 1, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '24px 28px' },
-  pageTitle: { color: '#fff', fontSize: '24px', fontWeight: '700', margin: '0 0 12px 0' },
-  divider: { height: '1px', backgroundColor: '#1E2535', marginBottom: '20px' },
-  scrollArea: { flex: 1, overflowY: 'auto' },
-  grid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', paddingBottom: '24px' },
-  leftCol: { display: 'flex', flexDirection: 'column', gap: '16px' },
-  rightCol: { display: 'flex', flexDirection: 'column', gap: '16px' },
-  card: { backgroundColor: '#161B27', borderRadius: '12px', padding: '20px', border: '1px solid #1E2535' },
-  cardTitle: { color: '#fff', fontSize: '15px', fontWeight: '700', marginBottom: '16px' },
-  cardHeaderRow: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' },
-  profileRow: { display: 'flex', alignItems: 'center', gap: '16px' },
-  avatarLg: { width: '64px', height: '64px', borderRadius: '50%', backgroundColor: '#00E676', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: '700', flexShrink: 0 },
-  profileName: { color: '#fff', fontSize: '20px', fontWeight: '700' },
-  profileSub: { color: '#A0AEC0', fontSize: '13px', marginTop: '3px' },
-  settingSection: { marginBottom: '4px' },
-  settingLabel: { color: '#A0AEC0', fontSize: '13px', fontWeight: '600', marginBottom: '10px' },
-  settingRow: { display: 'flex', alignItems: 'center', gap: '10px' },
-  settingCurrent: { color: '#A0AEC0', fontSize: '13px', whiteSpace: 'nowrap' },
-  settingInput: { flex: 1, backgroundColor: '#0D1117', border: '1px solid #2D3748', borderRadius: '8px', padding: '10px 14px', color: '#fff', fontSize: '13px', outline: 'none' },
-  pwInputWrapper: { flex: 1, position: 'relative', display: 'flex', alignItems: 'center' },
-  eyeBtn: { position: 'absolute', right: '10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px' },
-  sectionDivider: { height: '1px', backgroundColor: '#1E2535', margin: '16px 0' },
-  mintBtn: { backgroundColor: '#00E676', border: 'none', borderRadius: '8px', padding: '10px 16px', color: '#000', fontWeight: '700', fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' },
-  smallMintBtn: { backgroundColor: '#00E676', border: 'none', borderRadius: '6px', padding: '6px 12px', color: '#000', fontWeight: '700', fontSize: '12px', cursor: 'pointer' },
-  outlineBtn: { backgroundColor: 'transparent', border: '1px solid #00E676', borderRadius: '8px', padding: '10px 16px', color: '#00E676', fontWeight: '600', fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' },
-  grayBtn: { backgroundColor: 'transparent', border: '1px solid #2D3748', borderRadius: '8px', padding: '8px 14px', color: '#A0AEC0', fontSize: '13px', cursor: 'pointer' },
-  dangerBtn: { backgroundColor: 'transparent', border: '1px solid #FF3B3B', borderRadius: '8px', padding: '10px 16px', color: '#FF3B3B', fontWeight: '600', fontSize: '13px', cursor: 'pointer' },
-  dangerTextBtn: { background: 'none', border: 'none', color: '#FF3B3B', fontSize: '12px', cursor: 'pointer' },
-  countBadge: { backgroundColor: '#00E676', color: '#000', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '10px' },
-  friendSearchBox: { display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#0D1117', border: '1px solid #2D3748', borderRadius: '8px', padding: '6px 10px' },
-  friendSearchInput: { background: 'none', border: 'none', outline: 'none', color: '#fff', fontSize: '12px', width: '100px' },
-  friendItem: { display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0', borderBottom: '1px solid #1E2535' },
-  friendAvatar: { width: '36px', height: '36px', borderRadius: '50%', backgroundColor: '#1E2535', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', flexShrink: 0 },
-  friendName: { color: '#fff', fontSize: '14px', fontWeight: '600' },
-  friendUsername: { color: '#A0AEC0', fontSize: '12px', marginLeft: '6px' },
-  emptySmall: { color: '#A0AEC0', fontSize: '12px', textAlign: 'center', padding: '20px 0' },
-  twoColRow: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' },
-  placeItem: { display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0', borderBottom: '1px solid #1E2535' },
-  placeName: { color: '#fff', fontSize: '13px', fontWeight: '600' },
-  placeAddr: { color: '#A0AEC0', fontSize: '11px', marginTop: '2px' },
-  removeBtn: { background: 'none', border: 'none', color: '#A0AEC0', fontSize: '14px', cursor: 'pointer' },
-  routeItem: { display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0', borderBottom: '1px solid #1E2535' },
-  routeName: { color: '#fff', fontSize: '13px', fontWeight: '600' },
-  routeDate: { color: '#A0AEC0', fontSize: '11px', marginTop: '2px' },
-  reportRow: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
-  reportBox: { backgroundColor: '#0D1117', borderRadius: '8px', padding: '16px', textAlign: 'center', border: '1px solid #1E2535' },
-  reportLabel: { color: '#A0AEC0', fontSize: '12px', marginBottom: '8px' },
-  reportValue: { color: '#fff', fontSize: '24px', fontWeight: '700' },
-  warningBox: { marginTop: '12px', backgroundColor: 'rgba(255,59,59,0.1)', border: '1px solid rgba(255,59,59,0.3)', borderRadius: '8px', padding: '12px', color: '#FF3B3B', fontSize: '13px' },
-  modalBg: { position: 'fixed', inset: 0, zIndex: 200, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  modal: { backgroundColor: '#161B27', borderRadius: '16px', padding: '32px 28px', textAlign: 'center', border: '1px solid #FF3B3B', maxWidth: '320px', width: '90%' },
-  modalTitle: { color: '#fff', fontSize: '18px', fontWeight: '700', marginBottom: '8px' },
-  modalDesc: { color: '#A0AEC0', fontSize: '13px', lineHeight: '1.6' },
+export default function MyInfoPage({ user, onLogout, onUpdateUser }) {
+  const navigate = useNavigate()
+  const [nickname, setNickname] = useState('')
+  const [currentPw, setCurrentPw] = useState('')
+  const [newPw, setNewPw] = useState('')
+  const [alarmSound, setAlarmSound] = useState(true)
+  const [showDelete, setShowDelete] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  // 신고 신뢰도: GET /users/fake(허위신고 횟수) + GET /users/black(블랙리스트 여부)
+  const [reportStats, setReportStats] = useState({ fakeReports: 0, blacklisted: false })
+
+  useEffect(() => {
+    if (!user) return
+    let alive = true
+    ;(async () => {
+      const [fake, black] = await Promise.all([
+        apiGet('/users/fake').catch(() => null),
+        apiGet('/users/black').catch(() => null),
+      ])
+      if (!alive) return
+      setReportStats({
+        fakeReports: fake?.falseReportCount ?? 0,
+        blacklisted: black?.isBlacklisted ?? false,
+      })
+    })()
+    return () => { alive = false }
+  }, [user])
+
+  const handleProfileSave = async () => {
+    if (!user) { alert('로그인이 필요합니다.'); return }
+    const nn = nickname.trim()
+    if (!nn) { alert('변경할 닉네임을 입력해주세요.'); return }
+    setSaving(true)
+    try {
+      // 백엔드 저장 가능한 필드는 nickname 뿐(bio·github 컬럼 미존재)
+      await apiSend(`/users/${user.userId}`, 'PUT', { nickname: nn })
+      onUpdateUser?.({ nickname: nn })
+      setNickname('')
+      alert('프로필이 저장되었습니다.')
+    } catch (e) {
+      alert('프로필 저장 실패: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handlePasswordChange = async () => {
+    if (!user) { alert('로그인이 필요합니다.'); return }
+    if (!currentPw || !newPw) { alert('비밀번호를 입력해주세요.'); return }
+    if (newPw.length < 6) { alert('비밀번호는 6자 이상이어야 합니다.'); return }
+    try {
+      await apiSend(`/users/${user.userId}`, 'PUT', { password: newPw })
+      alert('비밀번호가 변경되었습니다.')
+      setCurrentPw(''); setNewPw('')
+    } catch (e) {
+      alert('비밀번호 변경 실패: ' + e.message)
+    }
+  }
+
+  const handleDeleteAccount = async () => {
+    if (!user) return
+    try {
+      await apiSend(`/users/${user.userId}`, 'DELETE')
+      alert('회원 탈퇴가 완료되었습니다.')
+      onLogout()
+      navigate('/')
+    } catch (e) {
+      alert('회원 탈퇴 실패: ' + e.message)
+    }
+  }
+
+  const handleCopyId = () => {
+    if (user?.userId == null) return
+    const text = String(user.userId)
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1500) }
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(done)
+    } else {
+      done()
+    }
+  }
+
+  const avatarChar = (user?.nickname || user?.username || '?').charAt(0)
+
+  return (
+    <UserShell user={user} onLogout={onLogout} active="myinfo">
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '26px 48px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.4px' }}>내 정보</div>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>계정과 안전 설정을 관리하세요</div>
+        </div>
+
+        {/* 프로필 헤더 */}
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 22, display: 'flex', alignItems: 'center', gap: 18 }}>
+          <div style={{
+            width: 68, height: 68, borderRadius: '50%', background: 'linear-gradient(135deg,#2563EB,#1E40AF)', color: '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, fontWeight: 700, flexShrink: 0,
+          }}>{avatarChar}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 20, fontWeight: 800 }}>{user?.nickname || user?.username || '게스트'}</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 3 }}>@{user?.username || '-'}</div>
+          </div>
+          {user?.role === 'ADMIN' && (
+            <span style={{ background: 'var(--blue-tint)', color: 'var(--blue-primary)', fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 20 }}>관리자</span>
+          )}
+          {user?.userId != null && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-strong)' }}>ID</span>
+              <div
+                onClick={handleCopyId}
+                title="클릭하여 복사 (친구 추가 시 사용)"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 14px',
+                  background: 'var(--blue-tint)', color: 'var(--blue-primary)', borderRadius: 10,
+                  fontSize: 15, fontWeight: 800, fontFamily: "'Inter',monospace", letterSpacing: '.5px',
+                  cursor: 'pointer', userSelect: 'none',
+                }}
+              >
+                {String(user.userId).padStart(7, '0')}
+                {copied ? (
+                  <span style={{ fontSize: 11.5, fontWeight: 700 }}>복사됨!</span>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 계정 설정 */}
+        <Card title="계정 설정" desc="프로필과 비밀번호를 변경할 수 있습니다.">
+          <Field label="닉네임">
+            <input style={inputStyle} placeholder={user?.nickname || '새 닉네임'} value={nickname} onChange={e => setNickname(e.target.value)} />
+          </Field>
+          <button onClick={handleProfileSave} disabled={saving} style={{
+            height: 44, padding: '0 20px', border: 'none', borderRadius: 11, background: 'var(--blue-primary)', color: '#fff',
+            fontSize: 14, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? .7 : 1, fontFamily: 'inherit',
+          }}>{saving ? '저장 중...' : '프로필 저장'}</button>
+
+          <div style={{ height: 1, background: 'var(--border)', margin: '20px 0' }} />
+
+          <Field label="현재 비밀번호">
+            <input style={inputStyle} type="password" placeholder="현재 비밀번호" value={currentPw} onChange={e => setCurrentPw(e.target.value)} />
+          </Field>
+          <Field label="새 비밀번호">
+            <input style={inputStyle} type="password" placeholder="새 비밀번호 (6자 이상)" value={newPw} onChange={e => setNewPw(e.target.value)} />
+          </Field>
+          <button onClick={handlePasswordChange} style={{
+            height: 44, padding: '0 20px', border: '1px solid var(--border)', borderRadius: 11, background: 'var(--surface)',
+            color: 'var(--text-strong)', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+          }}>비밀번호 변경</button>
+        </Card>
+
+        {/* 안전 설정 */}
+        <Card title="안전 설정" desc="긴급 상황 관련 설정입니다.">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, marginBottom: 10, cursor: 'pointer' }} onClick={() => navigate('/myinfo/friends')}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>긴급 위치 공유 친구 관리</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>긴급 신고 시 내 위치를 공유할 친구를 지정합니다.</div>
+            </div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>긴급 알람 소리</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>긴급 신고 접수 시 사이렌을 재생합니다.</div>
+            </div>
+            <Toggle checked={alarmSound} onChange={() => setAlarmSound(v => !v)} />
+          </div>
+        </Card>
+
+        {/* 신고 신뢰도 */}
+        <Card title="신고 신뢰도" desc="허위 긴급신고가 누적되면 서비스 이용이 제한될 수 있습니다.">
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <div style={{ flex: 1, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, textAlign: 'center' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>허위신고 횟수</div>
+              <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'Inter',sans-serif", color: reportStats.fakeReports > 0 ? 'var(--danger)' : 'var(--text-strong)' }}>{reportStats.fakeReports} / 3</div>
+            </div>
+            <div style={{ flex: 1, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, textAlign: 'center' }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>계정 상태</div>
+              <span style={{
+                display: 'inline-block', marginTop: 2, padding: '5px 14px', borderRadius: 20, fontSize: 13, fontWeight: 700,
+                background: reportStats.blacklisted ? 'rgba(225,29,72,.10)' : 'rgba(16,185,129,.13)',
+                color: reportStats.blacklisted ? 'var(--danger)' : 'var(--safe)',
+              }}>{reportStats.blacklisted ? '블랙리스트' : '정상'}</span>
+            </div>
+          </div>
+        </Card>
+
+        {/* 회원 탈퇴 */}
+        <Card title="계정 관리">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>탈퇴 시 모든 정보가 삭제되며 복구할 수 없습니다.</span>
+            <button onClick={() => setShowDelete(true)} style={{
+              height: 42, padding: '0 18px', border: '1px solid var(--danger)', borderRadius: 11, background: 'var(--surface)',
+              color: 'var(--danger)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
+            }}>회원 탈퇴</button>
+          </div>
+        </Card>
+      </div>
+
+      {/* 탈퇴 확인 모달 */}
+      {showDelete && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(15,23,42,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 340, background: 'var(--surface)', borderRadius: 18, padding: 28, textAlign: 'center', boxShadow: '0 20px 50px rgba(15,23,42,.25)' }}>
+            <div style={{ width: 52, height: 52, margin: '0 auto 14px', borderRadius: 15, background: 'rgba(225,29,72,.10)', color: 'var(--danger)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></svg>
+            </div>
+            <div style={{ fontSize: 17, fontWeight: 800 }}>정말 탈퇴하시겠습니까?</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.6 }}>탈퇴 시 모든 정보가 삭제되며<br />복구할 수 없습니다.</div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
+              <button onClick={() => setShowDelete(false)} style={{ flex: 1, height: 46, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--surface)', color: 'var(--text-strong)', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>취소</button>
+              <button onClick={handleDeleteAccount} style={{ flex: 1, height: 46, border: 'none', borderRadius: 12, background: 'var(--danger)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>탈퇴하기</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </UserShell>
+  )
 }
