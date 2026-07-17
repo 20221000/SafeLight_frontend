@@ -1,20 +1,7 @@
 // Light Safe 좌측 아이콘 레일 (64px) — 지도 · 경로 안내 · 커뮤니티 · 내 정보 + 로그아웃
+// 내비 정의는 모바일 탭바와 navItems.jsx에서 공유한다.
 import { useNavigate } from 'react-router-dom'
-
-const NAV = [
-  { key: 'map', label: '지도', to: '/', icon: (
-    <><path d="M12 21s7-6.4 7-11a7 7 0 1 0-14 0c0 4.6 7 11 7 11z" /><circle cx="12" cy="10" r="2.5" /></>
-  ) },
-  { key: 'route', label: '경로 안내', to: '/route', icon: (
-    <><circle cx="6" cy="19" r="2.4" /><circle cx="18" cy="5" r="2.4" /><path d="M8.2 18.2C13 17 15 13 15.6 7.2" /></>
-  ) },
-  { key: 'community', label: '커뮤니티', to: '/community', icon: (
-    <path d="M21 11.5a8 8 0 0 1-8.5 7.9L4 21l1.6-4.2A8 8 0 1 1 21 11.5z" />
-  ) },
-  { key: 'myinfo', label: '내 정보', to: '/myinfo', icon: (
-    <><circle cx="12" cy="8" r="3.6" /><path d="M4.5 20a7.5 7.5 0 0 1 15 0" /></>
-  ) },
-]
+import { USER_NAV as NAV } from './navItems'
 
 export default function IconRail({ active, user, onLogout }) {
   const navigate = useNavigate()

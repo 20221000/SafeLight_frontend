@@ -1,8 +1,12 @@
 // 로그인/회원가입 공통 배경 — 화이트&블루 지도 그리드 앰비언스 + 중앙 카드
+// 모바일(M2·M3)에서는 카드 여백을 줄여 입력 폭을 확보하고, 주소창 높이 변화에 100dvh로 대응한다.
+import useIsMobile from '../../hooks/useIsMobile'
+
 export default function AuthLayout({ children, width = 420 }) {
+  const isMobile = useIsMobile()
   return (
     <div style={{
-      width: '100vw', height: '100vh', overflowY: 'auto', background: 'var(--bg)', color: 'var(--text-strong)',
+      width: '100%', minHeight: '100dvh', overflowY: 'auto', background: 'var(--bg)', color: 'var(--text-strong)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative',
     }}>
       <div style={{
@@ -14,8 +18,10 @@ export default function AuthLayout({ children, width = 420 }) {
       <div style={{ position: 'absolute', bottom: -140, right: -60, width: 460, height: 460, borderRadius: '50%', background: 'radial-gradient(circle, rgba(37,99,235,.08), transparent 70%)' }} />
 
       <div style={{
-        position: 'relative', width, maxWidth: '92vw', background: 'var(--surface)', border: '1px solid var(--border)',
-        borderRadius: 20, boxShadow: '0 12px 40px rgba(15,23,42,.08)', padding: '40px 38px', margin: '24px 0',
+        position: 'relative', width, maxWidth: isMobile ? 'calc(100% - 32px)' : '92vw',
+        background: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 20, boxShadow: '0 12px 40px rgba(15,23,42,.08)',
+        padding: isMobile ? '30px 22px' : '40px 38px', margin: '24px 0',
       }}>
         {children}
       </div>
@@ -48,9 +54,10 @@ export function AuthField({ label, icon, ...inputProps }) {
         background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, marginBottom: 16,
       }}>
         {icon}
+        {/* minWidth:0 필수 — 없으면 좁은 화면에서 입력칸이 아이콘을 덮는다. */}
         <input
           {...inputProps}
-          style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: 14.5, color: 'var(--text-strong)', fontFamily: 'inherit' }}
+          style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 14.5, color: 'var(--text-strong)', fontFamily: 'inherit' }}
         />
       </div>
     </>

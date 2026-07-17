@@ -69,6 +69,10 @@ a:hover { color: var(--blue-deep); }
 .ls-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
 .ls-scroll::-webkit-scrollbar-track { background: transparent; }
 
+/* 가로 칩 줄 — 스크롤은 되게 두고 막대만 감춘다 */
+.ls-no-scrollbar { scrollbar-width: none; }
+.ls-no-scrollbar::-webkit-scrollbar { display: none; }
+
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react'
+import useIsMobile from '../../hooks/useIsMobile'
 
 async function fetchMarkerData() {
   try {
@@ -20,6 +21,9 @@ async function fetchMarkerData() {
 }
 
 export default function MapView({ filters, onToggleFilter, dangerZones = [], routeState = null, searchTarget = null }) {
+  // 모바일에서는 레이어 칩을 데스크탑의 3/4 크기로 줄인다(34 → 26px).
+  const isMobile = useIsMobile()
+  const CHIP_H = isMobile ? 26 : 34
   const mapRef = useRef(null)
   const mapInstance = useRef(null)
   const clustererRef = useRef(null)
@@ -331,13 +335,14 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
+      {/* 경로 안내 배너 — 모바일에서는 좌상단 레이어 칩과 같은 높이에 놓으면 겹치므로 칩 아래로 내린다 */}
       {routeState?.routeActive && (
         <div style={{
-          position: 'absolute', top: '16px', left: '50%',
+          position: 'absolute', top: isMobile ? 16 + CHIP_H + 10 : 16, left: '50%',
           transform: 'translateX(-50%)', zIndex: 10,
           background: 'var(--blue-primary)',
-          borderRadius: '20px', padding: '8px 18px',
-          color: '#fff', fontSize: '13px', fontWeight: 700,
+          borderRadius: '20px', padding: isMobile ? '6px 13px' : '8px 18px',
+          color: '#fff', fontSize: isMobile ? 11.5 : 13, fontWeight: 700,
           boxShadow: 'var(--shadow)', whiteSpace: 'nowrap',
         }}>
           🧭 경로 안내 중 · CCTV {routeState.safetyScore}개 경유
@@ -345,7 +350,7 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
       )}
 
       {/* 레이어 칩 (좌상단) */}
-      <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 10, display: 'flex', gap: 8 }}>
+      <div style={{ position: 'absolute', top: 16, left: isMobile ? 12 : 16, zIndex: 10, display: 'flex', gap: isMobile ? 6 : 8 }}>
         {[
           { key: 'cctv', emoji: '📷', label: 'CCTV' },
           { key: 'streetLamp', emoji: '💡', label: '가로등' },
@@ -357,14 +362,16 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
               key={ly.key}
               onClick={() => onToggleFilter?.(ly.key)}
               style={{
-                display: 'flex', alignItems: 'center', gap: 6, height: 34, padding: '0 13px',
-                borderRadius: 20, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', boxShadow: 'var(--shadow)',
+                display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 6,
+                height: CHIP_H, padding: isMobile ? '0 9px' : '0 13px',
+                borderRadius: 20, fontSize: isMobile ? 11 : 12.5, fontWeight: 600, cursor: 'pointer',
+                boxShadow: 'var(--shadow)', whiteSpace: 'nowrap',
                 border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
                 background: on ? 'var(--blue-primary)' : 'var(--surface)',
                 color: on ? '#fff' : 'var(--text-muted)', fontFamily: 'inherit',
               }}
             >
-              <span>{ly.emoji}</span><span>{ly.label}</span>
+              <span style={{ fontSize: isMobile ? 10 : 12.5 }}>{ly.emoji}</span><span>{ly.label}</span>
             </button>
           )
         })}
@@ -372,7 +379,7 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
 
       {/* 줌 컨트롤 (우하단) */}
       <div style={{
-        position: 'absolute', bottom: 20, right: 20, zIndex: 10, display: 'flex', flexDirection: 'column',
+        position: 'absolute', bottom: 'calc(20px + var(--ls-sheet-peek, 0px))', right: 20, zIndex: 10, display: 'flex', flexDirection: 'column',
         background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 11, overflow: 'hidden', boxShadow: 'var(--shadow)',
       }}>
         {['+', '−'].map((btn, i) => (
@@ -397,7 +404,7 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
       <button
         title="현재 위치로"
         style={{
-          position: 'absolute', bottom: 108, right: 20, zIndex: 10,
+          position: 'absolute', bottom: 'calc(108px + var(--ls-sheet-peek, 0px))', right: 20, zIndex: 10,
           width: 40, height: 40, borderRadius: 11,
           background: 'var(--surface)', border: '1px solid var(--border)',
           color: 'var(--blue-primary)', cursor: 'pointer', boxShadow: 'var(--shadow)',

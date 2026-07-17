@@ -1,61 +1,16 @@
 // Light Safe 유저 상단 글로벌 바 (60px) — 로고 · (중앙)검색 · 현재위치 · 알림 · 야간모드 · 프로필
-// 검색은 TopBar가 직접 소유한다(카카오 Places). 장소 선택 시:
-//   - onPickPlace 가 있으면(예: 경로 안내 페이지) 그 콜백에 위임
-//   - 없으면 기본 동작으로 지도 페이지('/')로 이동하며 router state 로 장소를 전달
-import { useState } from 'react'
+// 검색/현재위치는 PlaceSearchBox가 담당한다(모바일 헤더와 공유).
 import { useNavigate } from 'react-router-dom'
+import PlaceSearchBox from './PlaceSearchBox'
+import useRegionName from '../../hooks/useRegionName'
 
 export default function TopBar({ user, dark, onToggleDark, onPickPlace }) {
   const navigate = useNavigate()
-  const [value, setValue] = useState('')
-  const [results, setResults] = useState([])
 
   const nickname = user?.nickname || user?.username || '게스트'
   const initial = nickname.charAt(0)
-  const region = user?.region || '서울 · 마포구'
-
-  // 카카오 Places 키워드 검색 (services 라이브러리)
-  const runSearch = (keyword, onOk) => {
-    if (!keyword.trim() || !window.kakao?.maps?.services) return
-    const ps = new window.kakao.maps.services.Places()
-    ps.keywordSearch(keyword, (data, status) => {
-      if (status === window.kakao.maps.services.Status.OK) {
-        onOk(data.map(p => ({
-          name: p.place_name,
-          address: p.road_address_name || p.address_name,
-          lat: parseFloat(p.y),
-          lng: parseFloat(p.x),
-        })))
-      } else {
-        onOk([])
-      }
-    })
-  }
-
-  // 선택된 장소 전달: 콜백 우선, 없으면 지도 페이지로 이동
-  const deliver = (place) => {
-    setValue(place.name)
-    setResults([])
-    if (onPickPlace) onPickPlace(place)
-    else navigate('/', { state: { searchPlace: place } })
-  }
-
-  const handleChange = (v) => {
-    setValue(v)
-    if (v.trim()) runSearch(v, list => setResults(list.slice(0, 5)))
-    else setResults([])
-  }
-
-  const handleSubmit = () => {
-    if (results.length > 0) { deliver(results[0]); return }
-    runSearch(value, list => { if (list.length) deliver(list[0]) })
-  }
-
-  const handleCurrentLocation = () => {
-    navigator.geolocation?.getCurrentPosition(pos => {
-      deliver({ lat: pos.coords.latitude, lng: pos.coords.longitude, name: '현재 위치' })
-    })
-  }
+  // 백엔드 UserResponse에 지역 필드가 없어 현재 위치를 역지오코딩해 쓴다. 위치를 못 얻으면 표기를 비운다.
+  const region = useRegionName()
 
   return (
     <header style={{
@@ -84,54 +39,9 @@ export default function TopBar({ user, dark, onToggleDark, onPickPlace }) {
       {/* 검색 + 현재 위치 (화면 상단 중앙 고정) */}
       <div style={{
         position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)',
-        width: 'min(560px, calc(100% - 480px))', display: 'flex', alignItems: 'center', gap: 8, zIndex: 25,
+        width: 'min(560px, calc(100% - 480px))', zIndex: 25,
       }}>
-        <div style={{ flex: 1, position: 'relative' }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 9, height: 40, padding: '0 14px',
-            background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 11,
-          }}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" /></svg>
-            <input
-              value={value}
-              onChange={e => handleChange(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
-              placeholder="장소 검색 (도로명 · 건물명)"
-              style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: 13.5, color: 'var(--text-strong)', fontFamily: 'inherit' }}
-            />
-          </div>
-          {results.length > 0 && (
-            <div style={{
-              position: 'absolute', top: 46, left: 0, right: 0, zIndex: 40, overflow: 'hidden',
-              background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 11, boxShadow: 'var(--shadow)',
-            }}>
-              {results.map((p, i) => (
-                <div
-                  key={i}
-                  onMouseDown={() => deliver(p)}
-                  style={{
-                    display: 'flex', flexDirection: 'column', gap: 2, padding: '10px 14px', cursor: 'pointer',
-                    borderBottom: i < results.length - 1 ? '1px solid var(--border)' : 'none',
-                  }}
-                >
-                  <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-strong)' }}>{p.name}</span>
-                  {p.address && <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{p.address}</span>}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <button
-          onClick={handleCurrentLocation}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6, height: 40, padding: '0 13px',
-            background: 'var(--blue-tint)', color: 'var(--blue-primary)', border: '1px solid transparent',
-            borderRadius: 11, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
-          }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3.2" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" strokeLinecap="round" /></svg>
-          현재 위치
-        </button>
+        <PlaceSearchBox onPickPlace={onPickPlace} />
       </div>
 
       {/* 알림 · 야간모드 · 프로필 (우측) */}

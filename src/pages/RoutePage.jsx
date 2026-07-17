@@ -1,18 +1,52 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import UserShell from '../components/layout/UserShell'
+import useIsMobile from '../hooks/useIsMobile'
+import useDragSheet from '../hooks/useDragSheet'
+import useSheetHeadHeight from '../hooks/useSheetHeadHeight'
+import { SHEET_COLLAPSED } from '../components/layout/BottomSheet'
 
 const START_COLOR = '#2563EB'
 const DEST_COLOR = '#E11D48'
 
 export default function RoutePage({ user, onLogout }) {
   const navigate = useNavigate()
+  // 모바일(M4): 좌측 360px 패널이 화면을 다 먹으므로 지도 위 바텀시트로 전환한다(panelOpen = 시트 펼침).
+  const isMobile = useIsMobile()
+  const containerRef = useRef(null)
+  const sheetRef = useRef(null)
+  // mid = 핸들 + 제목 블록. 조금만 올리면 '안전 경로 안내' 제목까지만 보인다.
+  const sheetMid = useSheetHeadHeight(sheetRef, { handle: SHEET_COLLAPSED, fallback: 128 })
+  const {
+    height: sheetH, dragging: sheetDragging, handleProps: sheetHandleProps,
+    bodyProps: sheetBodyProps, isFull: sheetFull,
+  } = useDragSheet(containerRef, {
+    collapsed: SHEET_COLLAPSED, mid: sheetMid, fullRatio: 0.92, initial: 'mid',
+  })
   const mapRef = useRef(null)
   const mapInstance = useRef(null)
   const markersRef = useRef([])
   const polylinesRef = useRef([])
   const clustererRef = useRef(null)
   const kakaoMarkersRef = useRef([])
+
+  // 모바일에서는 바텀시트가 지도 아래쪽을 덮는다. 그냥 setCenter 하면 출발/도착 마커가 시트 뒤로 숨으므로,
+  // 시트를 뺀 '실제로 보이는 영역'의 한가운데로 오도록 시트 높이의 절반만큼 지도를 밀어준다.
+  // (시트를 끝까지 올린 상태에서는 지도가 어차피 안 보이므로 mid 높이까지만 보정한다)
+  const visibleOffset = () => (isMobile ? Math.min(sheetH, sheetMid) : 0)
+
+  // 최신 보정값은 ref로 넘긴다. centerOnVisible을 sheetH에 의존시키면 이 함수를 쓰는 effect가
+  // 시트를 끌 때마다 다시 돌아 위치 조회를 반복하게 된다.
+  const sheetOffsetRef = useRef(0)
+  useEffect(() => { sheetOffsetRef.current = isMobile ? Math.min(sheetH, sheetMid) : 0 }, [isMobile, sheetH, sheetMid])
+
+  const centerOnVisible = useCallback((latlng) => {
+    const map = mapInstance.current
+    if (!map) return
+    map.setCenter(latlng)
+    const off = sheetOffsetRef.current
+    if (off) map.panBy(0, off / 2)
+  }, [])
 
   const [startMode, setStartMode] = useState('current')
   const [currentLocation, setCurrentLocation] = useState(null)
@@ -73,7 +107,8 @@ export default function RoutePage({ user, onLogout }) {
           setSelectedStart({ lat: latitude, lng: longitude, name: '현재 위치' })
           if (mapInstance.current) {
             const latlng = new window.kakao.maps.LatLng(latitude, longitude)
-            mapInstance.current.setCenter(latlng); mapInstance.current.setLevel(4)
+            mapInstance.current.setLevel(4)
+            centerOnVisible(latlng)
             addMarker(latlng, '출발', START_COLOR)
           }
         },
@@ -81,7 +116,7 @@ export default function RoutePage({ user, onLogout }) {
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       )
     }
-  }, [startMode])
+  }, [startMode, centerOnVisible])
 
   useEffect(() => { fetchBookmarks() }, [])
 
@@ -130,7 +165,7 @@ export default function RoutePage({ user, onLogout }) {
     if (mapInstance.current) {
       clearMarkers()
       const latlng = new window.kakao.maps.LatLng(place.lat, place.lng)
-      mapInstance.current.setCenter(latlng); addMarker(latlng, '출발', START_COLOR)
+      addMarker(latlng, '출발', START_COLOR); centerOnVisible(latlng)
       if (selectedDest) addMarker(new window.kakao.maps.LatLng(selectedDest.lat, selectedDest.lng), '도착', DEST_COLOR)
     }
   }
@@ -141,7 +176,7 @@ export default function RoutePage({ user, onLogout }) {
       clearMarkers()
       if (selectedStart) addMarker(new window.kakao.maps.LatLng(selectedStart.lat, selectedStart.lng), '출발', START_COLOR)
       const destLatlng = new window.kakao.maps.LatLng(place.lat, place.lng)
-      addMarker(destLatlng, '도착', DEST_COLOR); mapInstance.current.setCenter(destLatlng)
+      addMarker(destLatlng, '도착', DEST_COLOR); centerOnVisible(destLatlng)
     }
   }
 
@@ -190,7 +225,9 @@ export default function RoutePage({ user, onLogout }) {
     if (selectedStart) addMarker(new window.kakao.maps.LatLng(selectedStart.lat, selectedStart.lng), '출발', START_COLOR)
     if (selectedDest) addMarker(new window.kakao.maps.LatLng(selectedDest.lat, selectedDest.lng), '도착', DEST_COLOR)
     const bounds = new window.kakao.maps.LatLngBounds()
-    linePath.forEach(latlng => bounds.extend(latlng)); mapInstance.current.setBounds(bounds)
+    linePath.forEach(latlng => bounds.extend(latlng))
+    // 아래쪽 패딩만큼 비워두면 경로 전체가 시트에 가리지 않고 들어온다.
+    mapInstance.current.setBounds(bounds, 24, 24, 24 + visibleOffset(), 24)
   }
 
   const handleBookmarkSave = async () => {
@@ -226,12 +263,46 @@ export default function RoutePage({ user, onLogout }) {
 
   return (
     <UserShell user={user} onLogout={onLogout} active="route" scroll={false} contentBg="var(--map-bg)" onPickPlace={setPendingPlace}>
-      <div style={{ display: 'flex', height: '100%' }}>
-        {/* 좌측 폼 패널 (열기/닫기 애니메이션) */}
-        <div style={{ flex: panelOpen ? '0 0 360px' : '0 0 0px', width: panelOpen ? 360 : 0, minWidth: 0, overflow: 'hidden', transition: 'width .3s ease, flex-basis .3s ease' }}>
-          <div className="ls-scroll" style={{ width: 360, height: '100%', overflowY: 'auto', background: 'var(--surface)', borderRight: '1px solid var(--border)' }}>
-          <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div>
+      <div ref={containerRef} style={isMobile ? { position: 'relative', height: '100%' } : { display: 'flex', height: '100%' }}>
+        {/* 모바일: 지도 위 드래그 바텀시트 / 데스크탑: 좌측 360px 패널(열기·닫기) */}
+        <div ref={sheetRef} style={isMobile ? {
+          position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 25, overflow: 'hidden',
+          display: 'flex', flexDirection: 'column', height: sheetH,
+          background: 'var(--surface)', borderTop: '1px solid var(--border)',
+          borderTopLeftRadius: 18, borderTopRightRadius: 18,
+          boxShadow: '0 -4px 20px rgba(15,23,42,0.08)',
+          transition: sheetDragging ? 'none' : 'height .24s ease',
+        } : { flex: panelOpen ? '0 0 360px' : '0 0 0px', width: panelOpen ? 360 : 0, minWidth: 0, overflow: 'hidden', transition: 'width .3s ease, flex-basis .3s ease' }}>
+          {/* 드래그 핸들 — 스크롤 영역 밖에 둬야 시트 이동과 본문 스크롤이 서로 안 먹는다 */}
+          {isMobile && (
+            <div
+              {...sheetHandleProps}
+              role="button"
+              aria-label="경로 패널 크기 조절"
+              style={{
+                ...sheetHandleProps.style,
+                flexShrink: 0, height: SHEET_COLLAPSED, minHeight: SHEET_COLLAPSED,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'grab',
+              }}
+            >
+              <span style={{ width: 38, height: 4, borderRadius: 2, background: 'var(--border)' }} />
+            </div>
+          )}
+          {/* 모바일은 시트를 다 올렸을 때만 스크롤. 그 전에는 본문을 끌어도 시트가 올라간다. */}
+          <div
+            className="ls-scroll"
+            {...(isMobile ? sheetBodyProps : {})}
+            style={{
+              ...(isMobile ? sheetBodyProps.style : {}),
+              width: isMobile ? '100%' : 360, flex: isMobile ? 1 : undefined, minHeight: 0,
+              height: isMobile ? undefined : '100%',
+              overflowY: !isMobile || sheetFull ? 'auto' : 'hidden',
+              background: 'var(--surface)', borderRight: isMobile ? 'none' : '1px solid var(--border)',
+            }}
+          >
+          <div style={{ padding: isMobile ? '0 16px 16px' : 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* data-sheet-head: 모바일 바텀시트가 이 높이를 재서 mid(조금 올린 상태) 높이로 쓴다. */}
+            <div data-sheet-head style={{ paddingTop: isMobile ? 2 : 0, paddingBottom: isMobile ? 10 : 0 }}>
               <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-.3px' }}>안전 경로 안내</div>
               <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>CCTV·가로등 밀집도로 안전한 길을 찾습니다</div>
             </div>
@@ -271,7 +342,8 @@ export default function RoutePage({ user, onLogout }) {
                 bookmarks.length > 0 ? bookmarks.map(bm => (
                   <div key={bm.id} onClick={() => handleBookmarkRoute(bm)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 8px', borderRadius: 10, cursor: 'pointer' }}>
                     <span style={{ fontSize: 18 }}>⭐</span>
-                    <div style={{ flex: 1 }}>
+                    {/* minWidth:0 — 긴 경로 이름이 삭제(✕) 버튼을 밀어내지 않게. */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{bm.routeName}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>CCTV {bm.safetyScore}개</div>
                     </div>
@@ -330,17 +402,17 @@ export default function RoutePage({ user, onLogout }) {
         </div>
 
         {/* 지도 */}
-        <div style={{ flex: 1, position: 'relative' }}>
+        <div style={isMobile ? { position: 'absolute', inset: 0 } : { flex: 1, position: 'relative' }}>
           <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
-          {/* 좌측 패널 열기/닫기 핸들 */}
+          {/* 좌측 패널 열기/닫기 핸들 (모바일은 시트의 드래그 핸들이 대신한다) */}
           <button
             onClick={() => setPanelOpen(o => !o)}
             title={panelOpen ? '패널 닫기' : '경로 안내 열기'}
             style={{
               position: 'absolute', top: 16, left: 0, zIndex: 11,
               width: 30, height: 46, padding: 0, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              display: isMobile ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center',
               background: 'var(--surface)', border: '1px solid var(--border)', borderLeft: 'none',
               borderRadius: '0 10px 10px 0', color: 'var(--text-muted)', boxShadow: '2px 0 8px rgba(15,23,42,.06)',
             }}
@@ -373,20 +445,20 @@ export default function RoutePage({ user, onLogout }) {
           )}
 
           {selectedRoute && (
-            <div style={{ position: 'absolute', top: 16, right: 72, zIndex: 10, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 16, minWidth: 170, boxShadow: 'var(--shadow)' }}>
+            <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: isMobile ? 12 : 16, minWidth: isMobile ? 0 : 170, maxWidth: isMobile ? '58%' : 'none', boxShadow: 'var(--shadow)', display: isMobile && panelOpen ? 'none' : 'block' }}>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>선택 경로 안전도</div>
               <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 6, color: scoreColor(selectedRoute.safetyScore) }}>CCTV {selectedRoute.safetyScore}개</div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>{selectedRoute.description}</div>
             </div>
           )}
-          <div style={{ position: 'absolute', bottom: 20, right: 20, zIndex: 10, display: 'flex', flexDirection: 'column', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 11, overflow: 'hidden', boxShadow: 'var(--shadow)' }}>
+          <div style={{ position: 'absolute', bottom: isMobile ? visibleOffset() + 16 : 20, right: isMobile ? 12 : 20, zIndex: 10, display: 'flex', flexDirection: 'column', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 11, overflow: 'hidden', boxShadow: 'var(--shadow)' }}>
             {['+', '−'].map((btn, i) => (
               <button key={btn} onClick={() => { if (!mapInstance.current) return; const level = mapInstance.current.getLevel(); mapInstance.current.setLevel(btn === '+' ? level - 1 : level + 1) }}
                 style={{ width: 40, height: 40, border: 'none', borderBottom: i === 0 ? '1px solid var(--border)' : 'none', background: 'transparent', cursor: 'pointer', fontSize: 19, color: 'var(--text-strong)' }}>{btn}</button>
             ))}
           </div>
-          <button onClick={() => { if (currentLocation && mapInstance.current) mapInstance.current.setCenter(new window.kakao.maps.LatLng(currentLocation.lat, currentLocation.lng)) }}
-            style={{ position: 'absolute', bottom: 108, right: 20, zIndex: 10, width: 40, height: 40, borderRadius: 11, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--blue-primary)', cursor: 'pointer', boxShadow: 'var(--shadow)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button onClick={() => { if (currentLocation) centerOnVisible(new window.kakao.maps.LatLng(currentLocation.lat, currentLocation.lng)) }}
+            style={{ position: 'absolute', bottom: isMobile ? visibleOffset() + 104 : 108, right: isMobile ? 12 : 20, zIndex: 10, width: 40, height: 40, borderRadius: 11, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--blue-primary)', cursor: 'pointer', boxShadow: 'var(--shadow)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3.2" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" strokeLinecap="round" /></svg>
           </button>
         </div>

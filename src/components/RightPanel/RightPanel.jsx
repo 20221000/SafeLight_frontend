@@ -1,46 +1,24 @@
-// Light Safe 우측 안전 드로어 (디자인 A) — 근처 위험 구역 (열기/닫기 토글)
+// Light Safe 안전 현황 패널 — 근처 위험 구역
+// 데스크탑: 우측 드로어(열기/닫기 토글, 320px). 모바일: 셸의 바텀시트 안에 내용만 전폭으로 렌더.
 // 백엔드 DangerZoneResponse 실제 필드만 사용: dangerZoneId, centerLat/Lng, dangerLevel, reportCount, radius, isActive
 import { useState } from 'react'
 import { LEVEL_STYLE } from '../../theme/tokens'
+import useIsMobile from '../../hooks/useIsMobile'
+import useRegionName from '../../hooks/useRegionName'
 
-export default function RightPanel({ dangerZones = [], isLoading = false }) {
-  const [open, setOpen] = useState(true) // 우측 안전 현황 열기/닫기
-  const activeZones = dangerZones.filter(z => z.isActive)
-
+function PanelContent({ activeZones, isLoading, region }) {
   return (
-    <div style={{ position: 'relative', flexShrink: 0, height: '100%' }}>
-      {/* 열기/닫기 토글 핸들 */}
-      <button
-        onClick={() => setOpen(o => !o)}
-        title={open ? '패널 닫기' : '안전 현황 열기'}
-        style={{
-          position: 'absolute', top: 16, left: -15, zIndex: 6,
-          width: 30, height: 46, padding: 0, cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'var(--surface)', border: '1px solid var(--border)', borderRight: 'none',
-          borderRadius: '10px 0 0 10px', color: 'var(--text-muted)', boxShadow: '-2px 0 8px rgba(15,23,42,.06)',
-        }}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'none' : 'rotate(180deg)' }}>
-          <path d="M9 6l6 6-6 6" />
-        </svg>
-      </button>
-
-      <aside className="ls-scroll" style={{
-        width: open ? 320 : 0, height: '100%',
-        overflowY: open ? 'auto' : 'hidden', overflowX: 'hidden',
-        background: 'var(--surface)', borderLeft: open ? '1px solid var(--border)' : 'none',
-        transition: 'width .3s ease',
-      }}>
-        <div style={{ width: 320 }}>
-      {/* 헤더 */}
-      <div style={{
+    <>
+      {/* 헤더 — data-sheet-head: 모바일 바텀시트가 이 높이를 재서 mid(조금 올린 상태) 높이로 쓴다. */}
+      <div data-sheet-head style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px 12px',
         position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 2,
       }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-.2px' }}>내 주변 안전 현황</div>
-          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>반경 500m · 마포구 서교동</div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+            반경 500m{region ? ` · ${region}` : ''}
+          </div>
         </div>
         <div style={{
           display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(16,185,129,.12)', color: 'var(--safe)',
@@ -89,6 +67,48 @@ export default function RightPanel({ dangerZones = [], isLoading = false }) {
           )
         })}
       </div>
+    </>
+  )
+}
+
+export default function RightPanel({ dangerZones = [], isLoading = false }) {
+  const isMobile = useIsMobile()
+  const region = useRegionName()
+  const [open, setOpen] = useState(true) // 우측 안전 현황 열기/닫기 (데스크탑 전용)
+  const activeZones = dangerZones.filter(z => z.isActive)
+
+  // 모바일: 열기/닫기·고정폭은 바텀시트가 담당하므로 내용만 넘긴다.
+  if (isMobile) {
+    return <PanelContent activeZones={activeZones} isLoading={isLoading} region={region} />
+  }
+
+  return (
+    <div style={{ position: 'relative', flexShrink: 0, height: '100%' }}>
+      {/* 열기/닫기 토글 핸들 */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        title={open ? '패널 닫기' : '안전 현황 열기'}
+        style={{
+          position: 'absolute', top: 16, left: -15, zIndex: 6,
+          width: 30, height: 46, padding: 0, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'var(--surface)', border: '1px solid var(--border)', borderRight: 'none',
+          borderRadius: '10px 0 0 10px', color: 'var(--text-muted)', boxShadow: '-2px 0 8px rgba(15,23,42,.06)',
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'none' : 'rotate(180deg)' }}>
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+      </button>
+
+      <aside className="ls-scroll" style={{
+        width: open ? 320 : 0, height: '100%',
+        overflowY: open ? 'auto' : 'hidden', overflowX: 'hidden',
+        background: 'var(--surface)', borderLeft: open ? '1px solid var(--border)' : 'none',
+        transition: 'width .3s ease',
+      }}>
+        <div style={{ width: 320 }}>
+          <PanelContent activeZones={activeZones} isLoading={isLoading} region={region} />
         </div>
       </aside>
     </div>

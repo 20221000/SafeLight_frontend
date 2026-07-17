@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import UserShell from '../components/layout/UserShell'
+import useIsMobile from '../hooks/useIsMobile'
 
 // NOTICE(공지)는 관리자 전용이라 제외. REPORT는 커뮤니티 '안전 신고' 글(원클릭 긴급신고와 무관).
 const CATEGORIES = ['INFO', 'QUESTION', 'REPORT', 'TIP']
 const CATEGORY_LABEL = { INFO: '정보', QUESTION: '질문', REPORT: '안전 신고', TIP: '팁' }
 
 export default function PostWritePage({ user, onLogout }) {
+  const isMobile = useIsMobile() // 모바일: 페이지 여백 축소(데스크탑 48/30px는 375px에서 너무 넓다)
   const navigate = useNavigate()
   const fileInputRef = useRef(null)
 
@@ -63,12 +65,14 @@ export default function PostWritePage({ user, onLogout }) {
 
   return (
     <UserShell user={user} onLogout={onLogout} active="community">
-      <div style={{ maxWidth: 760, margin: '0 auto', padding: '26px 30px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
-          <button onClick={() => navigate('/community')} style={{ display: 'flex', alignItems: 'center', gap: 5, border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+      <div style={{ maxWidth: 760, margin: '0 auto', padding: isMobile ? '16px 16px 24px' : '26px 30px' }}>
+        {/* 뒤로가기를 제목 위에 두는 흔한 형태. 한 줄에 나란히 두면 제목이 버튼에 딸린 것처럼 보인다.
+            padding:0 으로 버튼 기본 여백을 없애야 아래 제목과 왼쪽 선이 맞는다. */}
+        <div style={{ marginBottom: 20 }}>
+          <button onClick={() => navigate('/community')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: 0, border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>목록으로
           </button>
-          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.4px' }}>게시글 작성</div>
+          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.4px', marginTop: 8 }}>게시글 작성</div>
         </div>
 
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 26 }}>
@@ -93,8 +97,10 @@ export default function PostWritePage({ user, onLogout }) {
           <div style={{ marginBottom: 22 }}>
             <label style={labelStyle}>제목</label>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              {/* minWidth:0 필수 — flex 기본 min-width:auto 면 input 이 고유폭 아래로 줄지 못해
+                  좁은 화면에서 카드 밖으로 삐져나온다(아래 내용 칸과 좌우 간격이 어긋나는 원인). */}
               <input value={title} maxLength={100} onChange={e => setTitle(e.target.value)} placeholder="제목을 입력해주세요"
-                style={{ flex: 1, height: 46, padding: '0 92px 0 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 11, fontSize: 14, color: 'var(--text-strong)', outline: 'none', fontFamily: 'inherit' }} />
+                style={{ flex: 1, minWidth: 0, height: 46, padding: '0 92px 0 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 11, fontSize: 14, color: 'var(--text-strong)', outline: 'none', fontFamily: 'inherit' }} />
               <span style={{ position: 'absolute', right: 14, fontSize: 12, color: 'var(--text-muted)', fontFamily: "'Inter',sans-serif" }}>{title.length} / 100</span>
             </div>
           </div>

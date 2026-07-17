@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import UserShell from '../components/layout/UserShell'
+import useIsMobile from '../hooks/useIsMobile'
 import { POST_CATEGORY } from '../theme/tokens'
 
 function CategoryBadge({ category }) {
@@ -12,10 +13,63 @@ function Avatar({ name, size = 34 }) {
   return <div style={{ width: size, height: size, borderRadius: '50%', background: 'var(--blue-tint)', color: 'var(--blue-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.4, fontWeight: 700, flexShrink: 0 }}>{(name || '?').charAt(0)}</div>
 }
 
-const commentInputStyle = { flex: 1, height: 42, padding: '0 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 11, fontSize: 13.5, color: 'var(--text-strong)', outline: 'none', fontFamily: 'inherit' }
+// minWidth:0 필수 — flex 기본 min-width:auto 면 입력칸이 자기 고유폭 아래로 줄지 못해
+// 좁은 화면에서 '등록' 버튼이 화면 밖으로 밀려난다.
+const commentInputStyle = { flex: 1, minWidth: 0, height: 42, padding: '0 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 11, fontSize: 13.5, color: 'var(--text-strong)', outline: 'none', fontFamily: 'inherit' }
 const submitBtnStyle = { height: 42, padding: '0 18px', border: 'none', borderRadius: 11, background: 'var(--blue-primary)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit' }
 
+// 입력칸이 자라는 최대 높이. 이 이상은 내부 스크롤.
+const COMMENT_MAX_H = 120
+
+// 댓글·답글 공용 입력칸.
+// - 한 줄이 차면 옆으로 밀지 않고 줄을 바꾸며 칸이 아래로 자란다.
+// - 데스크탑: Enter 등록 / Shift+Enter 줄바꿈.
+// - 모바일: 화면 키보드가 textarea 에 줄바꿈 키를 띄워주므로 Enter 를 가로채지 않고 줄바꿈으로 넘긴다.
+//   (여기서 Enter 를 등록으로 쓰면 줄을 바꾸려다 글이 올라간다. 모바일 등록은 '등록' 버튼으로만.)
+function CommentComposer({ value, onChange, onSubmit, placeholder, isMobile }) {
+  const taRef = useRef(null)
+
+  // 내용에 맞춰 높이를 다시 잰다. auto 로 되돌려야 줄어들 때도 따라온다.
+  useLayoutEffect(() => {
+    const el = taRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, COMMENT_MAX_H)}px`
+  }, [value])
+
+  const handleKeyDown = (e) => {
+    if (isMobile) return
+    if (e.key !== 'Enter') return
+    // 한글 조합 중 Enter 는 글자 확정이지 등록이 아니다.
+    if (e.nativeEvent.isComposing) return
+    if (e.shiftKey) return
+    e.preventDefault()
+    onSubmit()
+  }
+
+  return (
+    <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+      <textarea
+        ref={taRef}
+        rows={1}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        style={{
+          flex: 1, minWidth: 0,
+          padding: '11px 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 11,
+          fontSize: 13.5, color: 'var(--text-strong)', outline: 'none', fontFamily: 'inherit',
+          resize: 'none', lineHeight: 1.5, maxHeight: COMMENT_MAX_H, overflowY: 'auto',
+        }}
+      />
+      <button onClick={onSubmit} style={{ ...submitBtnStyle, padding: isMobile ? '0 13px' : '0 18px' }}>등록</button>
+    </div>
+  )
+}
+
 export default function PostDetailPage({ user, onLogout }) {
+  const isMobile = useIsMobile() // 모바일: 페이지 여백 축소(데스크탑 48/30px는 375px에서 너무 넓다)
   const navigate = useNavigate()
   const { postId } = useParams()
 
@@ -119,7 +173,7 @@ export default function PostDetailPage({ user, onLogout }) {
 
   return (
     <UserShell user={user} onLogout={onLogout} active="community">
-      <div style={{ maxWidth: 760, margin: '0 auto', padding: '26px 30px' }}>
+      <div style={{ maxWidth: 760, margin: '0 auto', padding: isMobile ? '16px 16px 24px' : '26px 30px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
           <button onClick={() => navigate('/community')} style={{ display: 'flex', alignItems: 'center', gap: 5, border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>목록으로
@@ -183,13 +237,18 @@ export default function PostDetailPage({ user, onLogout }) {
                 </div>
 
                 <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>💬 댓글 {comments.length}개</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-                  <Avatar name={user?.nickname} size={36} />
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: 20 }}>
+                  {/* 모바일에서는 내 아바타를 빼고 그 폭을 입력칸에 준다. 좁은 기기(280px)에서는
+                      아바타·줄바꿈·등록이 다 들어가면 입력칸이 30px까지 눌려 쓸 수 없다. */}
+                  {!isMobile && <Avatar name={user?.nickname} size={36} />}
                   {user ? (
-                    <>
-                      <input value={commentInput} onChange={e => setCommentInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCommentSubmit()} placeholder="댓글을 입력해주세요..." style={commentInputStyle} />
-                      <button onClick={handleCommentSubmit} style={submitBtnStyle}>등록</button>
-                    </>
+                    <CommentComposer
+                      value={commentInput}
+                      onChange={setCommentInput}
+                      onSubmit={handleCommentSubmit}
+                      placeholder="댓글을 입력해주세요..."
+                      isMobile={isMobile}
+                    />
                   ) : (
                     <div onClick={() => { alert('로그인이 필요합니다.'); navigate('/login') }} style={{ ...commentInputStyle, display: 'flex', alignItems: 'center', cursor: 'pointer', color: 'var(--text-muted)' }}>댓글을 작성하려면 로그인이 필요합니다.</div>
                   )}
@@ -199,20 +258,27 @@ export default function PostDetailPage({ user, onLogout }) {
                   <div key={comment.commentId}>
                     <div style={{ display: 'flex', gap: 12, padding: '14px 0', borderBottom: '1px solid var(--border)' }}>
                       <Avatar name={comment.nickname} size={34} />
-                      <div style={{ flex: 1 }}>
+                      {/* minWidth:0 — 긴 닉네임이 칸을 넓혀 본문이 화면을 넘지 않게. */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
                           <span style={{ fontSize: 13.5, fontWeight: 600 }}>{comment.nickname}</span>
                           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{comment.createdAt?.slice(0, 10)}</span>
                         </div>
-                        <div style={{ fontSize: 14, lineHeight: 1.6 }}>{comment.content}</div>
+                        {/* pre-wrap: 입력한 줄바꿈을 그대로 보여준다. break-word: 긴 단어가 칸을 넘지 않게. */}
+                        <div style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{comment.content}</div>
                         <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
                           {user && <button onClick={() => setReplyInputId(replyInputId === comment.commentId ? null : comment.commentId)} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>답글</button>}
                           {user && user.userId === comment.userId && <button onClick={() => handleCommentDelete(comment.commentId)} style={{ border: 'none', background: 'transparent', color: 'var(--danger)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>삭제</button>}
                         </div>
                         {replyInputId === comment.commentId && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-                            <input value={replyInput} onChange={e => setReplyInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleReplySubmit(comment.commentId)} placeholder="답글을 입력해주세요..." style={commentInputStyle} />
-                            <button onClick={() => handleReplySubmit(comment.commentId)} style={submitBtnStyle}>등록</button>
+                          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginTop: 8 }}>
+                            <CommentComposer
+                              value={replyInput}
+                              onChange={setReplyInput}
+                              onSubmit={() => handleReplySubmit(comment.commentId)}
+                              placeholder="답글을 입력해주세요..."
+                              isMobile={isMobile}
+                            />
                           </div>
                         )}
                       </div>
@@ -220,12 +286,13 @@ export default function PostDetailPage({ user, onLogout }) {
                     {comment.replies?.map(reply => (
                       <div key={reply.commentId} style={{ display: 'flex', gap: 12, padding: '12px 0 12px 46px', borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
                         <Avatar name={reply.nickname} size={30} />
-                        <div style={{ flex: 1 }}>
+                        {/* minWidth:0 — 긴 닉네임이 칸을 넓혀 본문이 화면을 넘지 않게. */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
                             <span style={{ fontSize: 13, fontWeight: 600 }}>{reply.nickname}</span>
                             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{reply.createdAt?.slice(0, 10)}</span>
                           </div>
-                          <div style={{ fontSize: 14, lineHeight: 1.6 }}>{reply.content}</div>
+                          <div style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{reply.content}</div>
                           {user && user.userId === reply.userId && <button onClick={() => handleCommentDelete(reply.commentId)} style={{ border: 'none', background: 'transparent', color: 'var(--danger)', fontSize: 12, cursor: 'pointer', marginTop: 4, fontFamily: 'inherit' }}>삭제</button>}
                         </div>
                       </div>

@@ -2,10 +2,14 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import AdminShell from '../components/layout/AdminShell'
 import { adminStyles as s } from '../components/Admin/adminStyles'
 import { apiGet, apiSend } from '../utils/adminApi'
+import useIsMobile from '../hooks/useIsMobile'
 
 const fmtDate = (iso) => (iso ? String(iso).slice(0, 10) : '-')
 
 export default function AdminNoticePage({ user, onLogout }) {
+  // 작성 폼은 이미 전폭 입력이라 모바일에서도 그대로 쓴다(AM5 목업이 '상단 폼'도 허용).
+  // 목록만 테이블 → 카드로 바꾼다.
+  const isMobile = useIsMobile()
   const [notices, setNotices] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -174,6 +178,49 @@ export default function AdminNoticePage({ user, onLogout }) {
         </button>
       </div>
 
+      {isMobile ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700 }}>발행된 공지 ({notices.length})</div>
+          {notices.length === 0 && (
+            <div style={{ ...s.card, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+              {loading ? '불러오는 중…' : '등록된 공지가 없습니다.'}
+            </div>
+          )}
+          {notices.map(n => (
+            <div key={n.postId} style={{
+              background: 'var(--surface)', border: '1px solid var(--border)', borderLeft: '4px solid var(--blue-primary)',
+              borderRadius: 14, padding: '13px 14px',
+            }}>
+              <div style={{ fontSize: 14.5, fontWeight: 700, lineHeight: 1.4, wordBreak: 'break-word' }}>{n.title}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7, fontSize: 11.5, color: 'var(--text-muted)' }}>
+                <span style={{ fontFamily: "'Inter',sans-serif" }}>#{n.postId}</span>
+                <span>·</span>
+                <span>{fmtDate(n.createdAt)}</span>
+                <span>·</span>
+                <span>조회 {n.viewCount ?? 0}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 12, paddingTop: 11, borderTop: '1px solid var(--border)' }}>
+                <button
+                  onClick={() => openEdit(n)}
+                  style={{
+                    flex: 1, minHeight: 44, borderRadius: 11, cursor: 'pointer', fontFamily: 'inherit',
+                    border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-strong)',
+                    fontSize: 13.5, fontWeight: 700,
+                  }}
+                >수정</button>
+                <button
+                  onClick={() => handleDelete(n)}
+                  style={{
+                    flex: 1, minHeight: 44, borderRadius: 11, cursor: 'pointer', fontFamily: 'inherit',
+                    border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--danger)',
+                    fontSize: 13.5, fontWeight: 700,
+                  }}
+                >삭제</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
       <div style={s.card}>
         <div style={s.cardTitle}>공지 목록 ({notices.length})</div>
         <table style={s.table}>
@@ -201,6 +248,7 @@ export default function AdminNoticePage({ user, onLogout }) {
           </tbody>
         </table>
       </div>
+      )}
 
       {editing && (
         <div style={s.modalOverlay} onClick={() => setEditing(null)}>

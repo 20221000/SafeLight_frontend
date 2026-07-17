@@ -4,6 +4,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+    // 기본값은 IPv6 루프백([::1])만 열어 adb reverse(IPv4 127.0.0.1)가 닿지 못한다.
+    host: '127.0.0.1',
     proxy: {
       '/users': 'http://localhost:8080',
       '/friends': 'http://localhost:8080',

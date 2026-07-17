@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import UserShell from '../components/layout/UserShell'
+import useIsMobile from '../hooks/useIsMobile'
 import { apiGet, apiSend } from '../utils/adminApi'
 
 const TABS = ['친구 목록', '받은 요청', '보낸 요청']
@@ -24,6 +25,7 @@ function Avatar({ name }) {
 }
 
 export default function FriendsPage({ user, onLogout }) {
+  const isMobile = useIsMobile() // 모바일: 페이지 여백 축소(데스크탑 48/30px는 375px에서 너무 넓다)
   const [tab, setTab] = useState('친구 목록')
   const [search, setSearch] = useState('')
 
@@ -97,7 +99,7 @@ export default function FriendsPage({ user, onLogout }) {
 
   return (
     <UserShell user={user} onLogout={onLogout} active="myinfo">
-      <div style={{ maxWidth: 720, margin: '0 auto', padding: '26px 30px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ maxWidth: 720, margin: '0 auto', padding: isMobile ? '16px 16px 24px' : '26px 30px', display: 'flex', flexDirection: 'column', gap: isMobile ? 12 : 16 }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.4px' }}>친구 관리</div>
           <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>긴급 위치 공유를 허용할 친구를 관리하세요</div>
@@ -106,9 +108,11 @@ export default function FriendsPage({ user, onLogout }) {
         {/* 친구 추가 (현재는 사용자 ID로 요청 — 닉네임 검색 API 준비 중) */}
         <div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 9, height: 46, padding: '0 14px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12 }}>
+            {/* minWidth:0 필수 — flex 기본 min-width:auto 면 검색칸이 고유폭(약 179px) 아래로
+                줄지 못해 좁은 화면에서 '친구 요청' 버튼을 화면 밖으로 밀어낸다. */}
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 9, height: 46, padding: '0 14px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12 }}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" /></svg>
-              <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddFriend()} placeholder="친구의 사용자 ID(숫자) 입력" style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: 14, color: 'var(--text-strong)', fontFamily: 'inherit' }} />
+              <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddFriend()} placeholder="친구의 사용자 ID(숫자) 입력" style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 14, color: 'var(--text-strong)', fontFamily: 'inherit' }} />
             </div>
             <button onClick={handleAddFriend} style={{ height: 46, padding: '0 20px', border: 'none', borderRadius: 12, background: 'var(--blue-primary)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>친구 요청</button>
           </div>
@@ -157,7 +161,8 @@ export default function FriendsPage({ user, onLogout }) {
               : received.map(r => (
                 <Row key={r.requestId}>
                   <Avatar name={r.senderNickname} />
-                  <div style={{ flex: 1 }}>
+                  {/* minWidth:0 — 닉네임이 길면 수락·거절 버튼이 칸 밖으로 밀린다. */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600 }}>{r.senderNickname}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>ID {r.senderId}</div>
                   </div>
@@ -171,7 +176,8 @@ export default function FriendsPage({ user, onLogout }) {
               : sent.map(r => (
                 <Row key={r.requestId}>
                   <Avatar name={r.receiverNickname} />
-                  <div style={{ flex: 1 }}>
+                  {/* minWidth:0 — 닉네임이 길면 '대기중'·취소가 칸 밖으로 밀린다. */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600 }}>{r.receiverNickname}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>ID {r.receiverId}</div>
                   </div>

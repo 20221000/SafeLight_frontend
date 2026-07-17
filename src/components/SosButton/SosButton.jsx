@@ -2,8 +2,13 @@
 // 상태: 대기(idle) → 확인(dim + 3초 카운트다운, 다시 누르면 즉시 접수) → 완료(토스트)
 // 백엔드 연동 보존: geolocation → POST /emergency-reports
 import { useState, useRef, useEffect } from 'react'
+import useIsMobile from '../../hooks/useIsMobile'
 
 export default function SosButton({ user }) {
+  // 모바일에서는 지도를 너무 가려 대기 버튼을 데스크탑의 1/2 크기로 줄인다(88 → 44px).
+  // 44px는 터치 타깃 최소 권장치와 같아 더 줄이지 않는다. 확인 오버레이는 오조작을 막아야 하므로 그대로 크게 둔다.
+  const isMobile = useIsMobile()
+  const SOS_SIZE = isMobile ? 44 : 88
   const [phase, setPhase] = useState('idle') // idle | confirm | done
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
@@ -72,21 +77,24 @@ export default function SosButton({ user }) {
       {/* 대기 버튼 (지도 중앙 하단 상시 노출) */}
       {phase !== 'confirm' && (
         <div style={{
-          position: 'absolute', bottom: 26, left: '50%', transform: 'translateX(-50%)',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, zIndex: 100,
+          position: 'absolute', bottom: `calc(${isMobile ? 14 : 26}px + var(--ls-sheet-peek, 0px))`, left: '50%', transform: 'translateX(-50%)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: isMobile ? 6 : 9, zIndex: 100,
         }}>
           <button
             onClick={openConfirm}
             style={{
-              width: 88, height: 88, borderRadius: '50%', background: 'var(--danger)', color: '#fff',
+              width: SOS_SIZE, height: SOS_SIZE, borderRadius: '50%', background: 'var(--danger)', color: '#fff',
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              cursor: loading ? 'not-allowed' : 'pointer', border: '4px solid #fff',
+              cursor: loading ? 'not-allowed' : 'pointer', border: `${isMobile ? 2 : 4}px solid #fff`,
               animation: phase === 'idle' ? 'ls-sos 2s infinite' : 'none',
-              boxShadow: '0 10px 26px rgba(225,29,72,.5)',
+              boxShadow: isMobile ? '0 5px 14px rgba(225,29,72,.45)' : '0 10px 26px rgba(225,29,72,.5)',
             }}
           >
             {loading ? (
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" style={{ animation: 'ls-spin 0.8s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.2-8.5" strokeLinecap="round" /></svg>
+              <svg width={isMobile ? 18 : 26} height={isMobile ? 18 : 26} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" style={{ animation: 'ls-spin 0.8s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.2-8.5" strokeLinecap="round" /></svg>
+            ) : isMobile ? (
+              // 44px 안에 아이콘과 글자를 같이 넣으면 둘 다 못 알아보므로 글자만 남긴다.
+              <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.3px' }}>긴급</span>
             ) : (
               <>
                 <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10" /><path d="M12 8v4" /><circle cx="12" cy="16" r="0.6" fill="#fff" stroke="none" /></svg>
@@ -96,8 +104,8 @@ export default function SosButton({ user }) {
           </button>
           {phase === 'idle' && (
             <span style={{
-              fontSize: 12, fontWeight: 600, color: 'var(--text-strong)', background: 'var(--surface)',
-              border: '1px solid var(--border)', padding: '4px 11px', borderRadius: 20, boxShadow: 'var(--shadow)',
+              fontSize: isMobile ? 10.5 : 12, fontWeight: 600, color: 'var(--text-strong)', background: 'var(--surface)',
+              border: '1px solid var(--border)', padding: isMobile ? '3px 8px' : '4px 11px', borderRadius: 20, boxShadow: 'var(--shadow)',
             }}>위급 상황 시 눌러주세요</span>
           )}
         </div>
@@ -152,7 +160,8 @@ export default function SosButton({ user }) {
           }}>
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
           </div>
-          <div style={{ flex: 1 }}>
+          {/* minWidth:0 — 없으면 좁은 화면에서 토스트 본문이 닫기(×) 버튼을 밀어낸다. */}
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 16.5, fontWeight: 800, letterSpacing: '-.3px' }}>긴급 신고가 접수되었습니다</div>
             <div style={{ fontSize: 13.5, color: 'var(--text-muted)', marginTop: 5, lineHeight: 1.7 }}>
               허용된 친구에게 현재 위치가 공유되었습니다.<br />

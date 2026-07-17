@@ -1,36 +1,16 @@
-// Light Safe 관리자 셸 — 220px 사이드바 + 상단 헤더 + 스크롤 본문 (디자인 D 기준)
+// Light Safe 관리자 셸 — 뷰포트 폭에 따라 데스크탑 셸 / 모바일 셸로 분기한다.
+// 데스크탑: 220px 사이드바 + 상단 헤더 + 스크롤 본문 (디자인 D 기준). 모바일: MobileAdminShell(하단 탭바).
+// 관리자 가드와 신고수 배지 조회는 양쪽 공통이므로 여기서 처리해 내려준다.
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiGet } from '../../utils/adminApi'
-
-const ICONS = {
-  dashboard: <><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></>,
-  reports: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M9 13h6M9 17h4" /></>,
-  dangerzones: <><path d="M12 21s7-6.4 7-11a7 7 0 1 0-14 0c0 4.6 7 11 7 11z" /><circle cx="12" cy="10" r="2.5" /></>,
-  users: <><circle cx="9" cy="8" r="3.4" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><path d="M16 11a3 3 0 0 0 0-6" /><path d="M18.5 20a5.5 5.5 0 0 0-3-4.9" /></>,
-  notices: <><path d="M3 11l18-5v12L3 14v-3z" /><path d="M11.6 16.8A3 3 0 0 1 6 15.5" /></>,
-}
-
-const SECTIONS = [
-  {
-    title: '모니터링',
-    items: [
-      { key: 'dashboard', label: '대시보드', path: '/admin' },
-      { key: 'reports', label: '신고 관리', path: '/admin/reports' },
-      { key: 'dangerzones', label: '위험 구역', path: '/admin/dangerzones' },
-    ],
-  },
-  {
-    title: '관리',
-    items: [
-      { key: 'users', label: '사용자 관리', path: '/admin/users' },
-      { key: 'notices', label: '공지', path: '/admin/notices' },
-    ],
-  },
-]
+import MobileAdminShell from './MobileAdminShell'
+import { ADMIN_SECTIONS as SECTIONS, ADMIN_ICONS as ICONS } from './adminNavItems'
+import useIsMobile from '../../hooks/useIsMobile'
 
 export default function AdminShell({ user, onLogout, active, title, subtitle, headerRight, children }) {
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   // 신고 관리 배지: 활성 위험구역들의 신고수 합계(=실제 신고 내역 수). AdminReportPage 집계 방식과 동일.
   const [reportCount, setReportCount] = useState(null)
 
@@ -61,6 +41,21 @@ export default function AdminShell({ user, onLogout, active, title, subtitle, he
       localStorage.removeItem('accessToken')
     }
     navigate('/')
+  }
+
+  if (isMobile) {
+    return (
+      <MobileAdminShell
+        active={active}
+        title={title}
+        subtitle={subtitle}
+        headerRight={headerRight}
+        reportCount={reportCount}
+        onLogout={handleLogout}
+      >
+        {children}
+      </MobileAdminShell>
+    )
   }
 
   const navLink = (item) => {

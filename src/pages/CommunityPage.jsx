@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import UserShell from '../components/layout/UserShell'
+import useIsMobile from '../hooks/useIsMobile'
 import { POST_CATEGORY } from '../theme/tokens'
 
 // 탭 라벨 → 백엔드 카테고리. '안전 신고'는 커뮤니티 신고글(REPORT), 원클릭 긴급신고와 무관.
@@ -20,6 +21,8 @@ function CategoryBadge({ category }) {
 }
 
 export default function CommunityPage({ user, onLogout }) {
+  // 모바일(M5): 사이드바를 피드 아래로 내리고, 글쓰기는 목업대로 플로팅 FAB.
+  const isMobile = useIsMobile()
   const navigate = useNavigate()
 
   const [activeCategory, setActiveCategory] = useState('전체')
@@ -78,9 +81,12 @@ export default function CommunityPage({ user, onLogout }) {
 
   return (
     <UserShell user={user} onLogout={onLogout} active="community">
-      <div style={{ display: 'flex', gap: 20, padding: '26px 48px', maxWidth: 1560, margin: '0 auto', alignItems: 'flex-start' }}>
+      <div style={{
+        display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 14 : 20,
+        padding: isMobile ? '16px 16px 84px' : '26px 48px', maxWidth: 1560, margin: '0 auto', alignItems: 'flex-start',
+      }}>
         {/* 피드 */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 0, width: '100%' }}>
           {/* 헤더 */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
@@ -89,14 +95,20 @@ export default function CommunityPage({ user, onLogout }) {
             </div>
             <button
               onClick={() => { if (!user) { alert('로그인이 필요합니다.'); navigate('/login'); return } navigate('/community/write') }}
-              style={{
+              title="글쓰기"
+              style={isMobile ? {
+                position: 'fixed', right: 16, bottom: 'calc(72px + env(safe-area-inset-bottom))', zIndex: 30,
+                width: 56, height: 56, borderRadius: '50%', border: 'none', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'var(--blue-primary)', color: '#fff', boxShadow: '0 6px 18px rgba(37,99,235,.38)',
+              } : {
                 display: 'flex', alignItems: 'center', gap: 7, height: 42, padding: '0 18px', border: 'none', borderRadius: 12,
                 background: 'var(--blue-primary)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
                 boxShadow: '0 6px 16px rgba(37,99,235,.28)', fontFamily: 'inherit',
               }}
             >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-              글쓰기
+              <svg width={isMobile ? 24 : 17} height={isMobile ? 24 : 17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+              {!isMobile && '글쓰기'}
             </button>
           </div>
 
@@ -106,18 +118,26 @@ export default function CommunityPage({ user, onLogout }) {
             background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12,
           }}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" /></svg>
+            {/* minWidth:0 필수 — 없으면 좁은 화면에서 '검색' 버튼을 밖으로 밀어낸다. */}
             <input
               value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSearch()}
               placeholder="게시글 검색..."
-              style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', fontSize: 14, color: 'var(--text-strong)', fontFamily: 'inherit' }}
+              style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 14, color: 'var(--text-strong)', fontFamily: 'inherit' }}
             />
             <button onClick={handleSearch} style={{ border: 'none', background: 'transparent', color: 'var(--blue-primary)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>검색</button>
           </div>
 
-          {/* 탭 */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+          {/* 탭 — 모바일은 줄바꿈 없이 한 줄(좁은 기기에서도 넘치면 가로 스크롤) */}
+          <div
+            className={isMobile ? 'ls-no-scrollbar' : undefined}
+            style={{
+              display: 'flex', gap: isMobile ? 6 : 8, marginBottom: 18,
+              flexWrap: isMobile ? 'nowrap' : 'wrap',
+              overflowX: isMobile ? 'auto' : 'visible',
+            }}
+          >
             {CATEGORIES.map(cat => {
               const on = activeCategory === cat
               return (
@@ -125,7 +145,9 @@ export default function CommunityPage({ user, onLogout }) {
                   key={cat}
                   onClick={() => handleCategoryChange(cat)}
                   style={{
-                    padding: '8px 16px', borderRadius: 20, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
+                    padding: isMobile ? '7px 11px' : '8px 16px', borderRadius: 20,
+                    fontSize: isMobile ? 12.5 : 13, cursor: 'pointer', fontFamily: 'inherit',
+                    flexShrink: 0, whiteSpace: 'nowrap',
                     border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
                     background: on ? 'var(--blue-primary)' : 'var(--surface)',
                     color: on ? '#fff' : 'var(--text-muted)', fontWeight: on ? 700 : 500,
@@ -198,14 +220,15 @@ export default function CommunityPage({ user, onLogout }) {
         </div>
 
         {/* 우측 컬럼 */}
-        <aside style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <aside style={{ width: isMobile ? '100%' : 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 18 }}>
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>🔥 인기 게시글</div>
             {popularPosts.length > 0 ? popularPosts.map((post, idx) => (
               <div key={post.postId} onClick={() => handlePostClick(post.postId)} style={{ display: 'flex', gap: 10, marginBottom: 12, cursor: 'pointer' }}>
                 <span style={{ width: 22, height: 22, borderRadius: 7, background: 'var(--blue-tint)', color: 'var(--blue-primary)', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: "'Inter',sans-serif" }}>{idx + 1}</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, marginBottom: 4, lineHeight: 1.4 }}>{post.title}</div>
+                {/* minWidth:0 — 긴 제목이 칸을 넘치지 않게. */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, marginBottom: 4, lineHeight: 1.4, wordBreak: 'break-word' }}>{post.title}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>❤ {post.likeCount}</div>
                 </div>
               </div>
