@@ -129,13 +129,14 @@ export default function CommunityPage({ user, onLogout }) {
             <button onClick={handleSearch} style={{ border: 'none', background: 'transparent', color: 'var(--blue-primary)', fontSize: 13.5, fontWeight: 700, cursor: 'pointer' }}>검색</button>
           </div>
 
-          {/* 탭 — 모바일은 줄바꿈 없이 한 줄(좁은 기기에서도 넘치면 가로 스크롤) */}
+          {/* 탭 — 들어가는 폭에서는 한 줄, 안 들어가면 다음 줄로 내린다.
+              가로 스크롤은 쓰지 않는다: 스크롤바가 없으면 화면 밖 칩을 발견할 방법이 없다.
+              실제 기기(375px~)에서는 칩이 한 줄에 다 들어가므로 wrap 이어도 한 줄로 보인다. */}
           <div
-            className={isMobile ? 'ls-no-scrollbar' : undefined}
             style={{
               display: 'flex', gap: isMobile ? 6 : 8, marginBottom: 18,
-              flexWrap: isMobile ? 'nowrap' : 'wrap',
-              overflowX: isMobile ? 'auto' : 'visible',
+              flexWrap: 'wrap',
+              rowGap: isMobile ? 6 : 8,
             }}
           >
             {CATEGORIES.map(cat => {

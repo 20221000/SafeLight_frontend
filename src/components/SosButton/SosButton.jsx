@@ -13,11 +13,18 @@ export default function SosButton({ user }) {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const timerRef = useRef(null)
+  const doneTimerRef = useRef(null)
+  // 접수가 진행 중인지 동기적으로 기록한다. loading 은 setState 라 다음 렌더까지 반영되지 않아
+  // 연타 사이의 짧은 순간을 막지 못한다(같은 신고가 누른 횟수만큼 접수되던 원인).
+  const submittingRef = useRef(false)
 
   const clearTimer = () => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
   }
-  useEffect(() => clearTimer, [])
+  useEffect(() => () => {
+    clearTimer()
+    if (doneTimerRef.current) clearTimeout(doneTimerRef.current)
+  }, [])
 
   const openConfirm = () => {
     if (loading) return
@@ -33,6 +40,10 @@ export default function SosButton({ user }) {
   }
 
   const handleConfirm = async () => {
+    // 3초 자동 접수 타이머와 버튼 탭이 겹치거나 버튼을 연타하면 같은 신고가 여러 건 올라간다.
+    // 접수가 끝날 때까지(성공·실패 모두) 두 번째 요청을 받지 않는다.
+    if (submittingRef.current) return
+    submittingRef.current = true
     clearTimer()
     setLoading(true)
     try {
@@ -59,7 +70,7 @@ export default function SosButton({ user }) {
 
       setResult(json.data || {})
       setPhase('done')
-      setTimeout(() => setPhase('idle'), 6000)
+      doneTimerRef.current = setTimeout(() => setPhase('idle'), 6000)
     } catch (err) {
       if (err.code === err.PERMISSION_DENIED) {
         alert('위치 권한이 필요합니다. 브라우저 설정에서 위치 권한을 허용해주세요.')
@@ -69,6 +80,7 @@ export default function SosButton({ user }) {
       setPhase('idle')
     } finally {
       setLoading(false)
+      submittingRef.current = false
     }
   }
 
@@ -118,29 +130,48 @@ export default function SosButton({ user }) {
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 22,
         }}>
           <div style={{ position: 'relative', width: 220, height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="220" height="220" viewBox="0 0 130 130" style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}>
+            {/* pointerEvents:none 필수 — 이 카운트다운 링은 아래 확인 버튼을 완전히 덮고 있어서
+                이게 없으면 탭이 버튼이 아니라 링에 꽂혀 아무 반응이 없다(누르면 반응 없던 원인). */}
+            <svg width="220" height="220" viewBox="0 0 130 130" style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)', pointerEvents: 'none' }}>
               <circle cx="65" cy="65" r="61" fill="none" stroke="rgba(255,255,255,.25)" strokeWidth="6" />
               <circle cx="65" cy="65" r="61" fill="none" stroke="#fff" strokeWidth="6" strokeLinecap="round"
                 strokeDasharray="383" strokeDashoffset="0" style={{ animation: 'ls-count 3s linear forwards' }} />
             </svg>
             <button
               onClick={handleConfirm}
+              disabled={loading}
               style={{
                 width: 176, height: 176, borderRadius: '50%', background: 'var(--danger)', color: '#fff',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', border: '5px solid #fff', animation: 'ls-sos 1.1s infinite',
+                cursor: loading ? 'not-allowed' : 'pointer', border: '5px solid #fff',
+                animation: loading ? 'none' : 'ls-sos 1.1s infinite',
               }}
             >
-              <span style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.5px' }}>긴급 신고</span>
-              <span style={{ fontSize: 13, fontWeight: 600, opacity: .92, marginTop: 6 }}>한 번 더 누르면 신고됩니다</span>
-              <span style={{ fontSize: 11.5, opacity: .8, marginTop: 2 }}>3초 후 자동 접수</span>
+              {/* 위치 조회에 몇 초가 걸릴 수 있다. 그동안 화면이 그대로면 눌리지 않은 줄 알고 또 누른다. */}
+              {loading ? (
+                <>
+                  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" style={{ animation: 'ls-spin 0.8s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.2-8.5" strokeLinecap="round" /></svg>
+                  <span style={{ fontSize: 17, fontWeight: 800, marginTop: 10 }}>접수 중...</span>
+                  <span style={{ fontSize: 12, opacity: .85, marginTop: 4 }}>위치를 확인하고 있습니다</span>
+                </>
+              ) : (
+                <>
+                  <span style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.5px' }}>긴급 신고</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, opacity: .92, marginTop: 6 }}>한 번 더 누르면 신고됩니다</span>
+                  <span style={{ fontSize: 11.5, opacity: .8, marginTop: 2 }}>3초 후 자동 접수</span>
+                </>
+              )}
             </button>
           </div>
+          {/* 접수가 시작된 뒤로는 취소할 수 없다. 여기서 취소를 받아주면 신고는 그대로 올라가는데
+              사용자는 취소된 줄 안다. */}
           <button
             onClick={cancel}
+            disabled={loading}
             style={{
               height: 46, padding: '0 32px', borderRadius: 23, border: 'none', background: 'var(--surface)',
-              color: 'var(--text-strong)', fontSize: 15, fontWeight: 700, cursor: 'pointer',
+              color: 'var(--text-strong)', fontSize: 15, fontWeight: 700,
+              cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? .5 : 1,
               boxShadow: '0 6px 18px rgba(15,23,42,.25)', fontFamily: 'inherit',
             }}
           >취소</button>

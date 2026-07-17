@@ -109,8 +109,9 @@ export default function AdminReportPage({ user, onLogout }) {
           onChange={e => setSearch(e.target.value)}
         />
 
-        {/* 상태 필터 칩 (가로 스크롤) */}
-        <div className="ls-scroll" style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 2, margin: '0 -16px', padding: '0 16px' }}>
+        {/* 상태 필터 칩 — 안 들어가면 다음 줄로 내린다. 가로 스크롤은 쓰지 않는다
+            (스크롤바가 없으면 화면 밖 칩을 발견할 방법이 없다). */}
+        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
           {chips.map(c => {
             const on = statusFilter === c.code
             return (
