@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import UserShell from '../components/layout/UserShell'
 import useIsMobile from '../hooks/useIsMobile'
+import useAuthNav from '../hooks/useAuthNav'
 import { apiGet, apiSend } from '../utils/adminApi'
 
 function Card({ title, desc, children }) {
@@ -52,6 +53,7 @@ function Toggle({ checked, onChange }) {
 export default function MyInfoPage({ user, onLogout, onUpdateUser }) {
   const isMobile = useIsMobile() // 모바일: 페이지 여백 축소(데스크탑 48/30px는 375px에서 너무 넓다)
   const navigate = useNavigate()
+  const { goLogin } = useAuthNav()
   const [nickname, setNickname] = useState('')
   const [currentPw, setCurrentPw] = useState('')
   const [newPw, setNewPw] = useState('')
@@ -146,7 +148,7 @@ export default function MyInfoPage({ user, onLogout, onUpdateUser }) {
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><path d="M10 17l5-5-5-5" /><path d="M15 12H3" /></svg>
                 </button>
               ) : (
-                <button onClick={() => navigate('/login')} title="로그인" aria-label="로그인" style={headerIconBtn({ color: 'var(--blue-primary)' })}>
+                <button onClick={goLogin} title="로그인" aria-label="로그인" style={headerIconBtn({ color: 'var(--blue-primary)' })}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 17l5-5-5-5" /><path d="M15 12H3" /><path d="M9 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H9" /></svg>
                 </button>
               )}

@@ -5,6 +5,7 @@ import { adminStyles as s, LEVEL_STYLE, STATUS_STYLE } from '../components/Admin
 import { apiGet } from '../utils/adminApi'
 import { fetchAllReports, computeReportStats } from '../utils/reportsAggregate'
 import useIsMobile from '../hooks/useIsMobile'
+import Icon from '../components/Icon'
 
 const fmtDate = (iso) => (iso ? String(iso).slice(0, 10) : '-')
 const fmtShort = (iso) => (iso ? String(iso).slice(5, 16).replace('T', ' ') : '-')
@@ -51,9 +52,9 @@ export default function AdminDashboardPage({ user, onLogout }) {
     .slice(0, 5)
 
   const kpis = [
-    { icon: '👤', label: '전체 사용자',   value: users.length, unit: '명', color: '#2563EB' },
-    { icon: '⚠️', label: '활성 위험구역', value: zones.length, unit: '개', color: '#F59E0B' },
-    { icon: '🚫', label: '블랙리스트',     value: blacklistCount, unit: '명', color: '#E11D48' },
+    { icon: 'user',            label: '전체 사용자',   value: users.length, unit: '명', color: '#2563EB' },
+    { icon: 'alert-triangle',  label: '활성 위험구역', value: zones.length, unit: '개', color: '#F59E0B' },
+    { icon: 'ban',             label: '블랙리스트',     value: blacklistCount, unit: '명', color: '#E11D48' },
   ]
 
   // 모바일(AM1): KPI 2열 그리드 + 상태 분포 바 + 최근 긴급신고 카드.
@@ -183,7 +184,7 @@ export default function AdminDashboardPage({ user, onLogout }) {
           <div key={item.label} style={s.kpiCard}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <div style={{ ...s.kpiIcon, backgroundColor: item.color + '22' }}>
-                <span style={{ fontSize: '24px' }}>{item.icon}</span>
+                <Icon name={item.icon} size={24} color={item.color} strokeWidth={2} />
               </div>
               <div>
                 <div style={s.kpiLabel}>{item.label}</div>
@@ -199,7 +200,7 @@ export default function AdminDashboardPage({ user, onLogout }) {
       {/* 신고 처리 현황 (활성 위험구역 기준 집계) */}
       <div style={s.card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <span style={s.cardTitle}>🚨 신고 처리 현황</span>
+          <span style={s.cardTitle}><Icon name="siren" size={16} color="var(--blue-primary)" /> 신고 처리 현황</span>
           <button style={s.btnGray} onClick={() => navigate('/admin/reports')}>신고 관리 →</button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
@@ -222,7 +223,7 @@ export default function AdminDashboardPage({ user, onLogout }) {
 
       <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div style={{ ...s.card, flex: 1, minWidth: '360px' }}>
-          <div style={s.cardTitle}>👤 최근 가입 사용자</div>
+          <div style={s.cardTitle}><Icon name="user" size={16} color="var(--blue-primary)" /> 최근 가입 사용자</div>
           <table style={s.table}>
             <thead>
               <tr>{['닉네임', '아이디', '가입일', '허위신고', '상태'].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
@@ -253,7 +254,7 @@ export default function AdminDashboardPage({ user, onLogout }) {
         </div>
 
         <div style={{ ...s.card, flex: 1, minWidth: '360px' }}>
-          <div style={s.cardTitle}>📍 활성 위험구역</div>
+          <div style={s.cardTitle}><Icon name="map-pin" size={16} color="var(--blue-primary)" /> 활성 위험구역</div>
           <table style={s.table}>
             <thead>
               <tr>{['ID', '위험도', '반경', '신고수', '생성일'].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>

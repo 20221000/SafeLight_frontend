@@ -3,6 +3,7 @@ import AdminShell from '../components/layout/AdminShell'
 import { adminStyles as s } from '../components/Admin/adminStyles'
 import { apiGet, apiSend } from '../utils/adminApi'
 import useIsMobile from '../hooks/useIsMobile'
+import Icon from '../components/Icon'
 
 const fmtDate = (iso) => (iso ? String(iso).slice(0, 10) : '-')
 
@@ -132,7 +133,7 @@ export default function AdminNoticePage({ user, onLogout }) {
       {error && <div style={s.errorBox}>데이터를 불러오지 못했습니다: {error}</div>}
 
       <div style={s.card}>
-        <div style={s.cardTitle}>📢 공지 작성</div>
+        <div style={s.cardTitle}><Icon name="megaphone" size={16} color="var(--blue-primary)" /> 공지 작성</div>
         <div style={{ marginBottom: '12px' }}>
           <label style={s.inputLabel}>제목</label>
           <input style={s.input} placeholder="공지 제목" value={title} onChange={e => setTitle(e.target.value)} />
@@ -165,8 +166,8 @@ export default function AdminNoticePage({ user, onLogout }) {
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {files.map((file, idx) => (
                 <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 13px' }}>
-                  <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>📎 {file.name}</span>
-                  <button onClick={() => setFiles(prev => prev.filter((_, i) => i !== idx))} style={{ border: 'none', background: 'transparent', color: 'var(--danger)', fontSize: 14, cursor: 'pointer' }}>✕</button>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-muted)' }}><Icon name="paperclip" size={14} /> {file.name}</span>
+                  <button onClick={() => setFiles(prev => prev.filter((_, i) => i !== idx))} style={{ border: 'none', background: 'transparent', color: 'var(--danger)', cursor: 'pointer', display: 'flex', padding: 0 }}><Icon name="x" size={16} /></button>
                 </div>
               ))}
             </div>

@@ -2,9 +2,11 @@
 // 내비 정의는 모바일 탭바와 navItems.jsx에서 공유한다.
 import { useNavigate } from 'react-router-dom'
 import { USER_NAV as NAV } from './navItems'
+import useAuthNav from '../../hooks/useAuthNav'
 
 export default function IconRail({ active, user, onLogout }) {
   const navigate = useNavigate()
+  const { goLogin } = useAuthNav()
   const loggedIn = !!user
 
   return (
@@ -59,7 +61,7 @@ export default function IconRail({ active, user, onLogout }) {
         </button>
       ) : (
         <button
-          onClick={() => navigate('/login')}
+          onClick={goLogin}
           title="로그인"
           style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, width: 52, padding: '9px 0',

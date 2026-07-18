@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import UserShell from '../components/layout/UserShell'
 import useIsMobile from '../hooks/useIsMobile'
+import useAuthNav from '../hooks/useAuthNav'
+import Icon from '../components/Icon'
 
 // NOTICE(공지)는 관리자 전용이라 제외. REPORT는 커뮤니티 '안전 신고' 글(원클릭 긴급신고와 무관).
 const CATEGORIES = ['INFO', 'QUESTION', 'REPORT', 'TIP']
@@ -10,6 +12,7 @@ const CATEGORY_LABEL = { INFO: '정보', QUESTION: '질문', REPORT: '안전 신
 export default function PostWritePage({ user, onLogout }) {
   const isMobile = useIsMobile() // 모바일: 페이지 여백 축소(데스크탑 48/30px는 375px에서 너무 넓다)
   const navigate = useNavigate()
+  const { goLogin } = useAuthNav()
   const fileInputRef = useRef(null)
 
   const [category, setCategory] = useState('INFO')
@@ -20,7 +23,7 @@ export default function PostWritePage({ user, onLogout }) {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!user) { alert('로그인이 필요합니다.'); navigate('/login') }
+    if (!user) { alert('로그인이 필요합니다.'); goLogin() }
   }, [user])
 
   const handleFileChange = (e) => setFiles(prev => [...prev, ...Array.from(e.target.files)])
@@ -30,7 +33,7 @@ export default function PostWritePage({ user, onLogout }) {
   }
 
   const handleSubmit = async () => {
-    if (!user) { alert('로그인이 필요합니다.'); navigate('/login'); return }
+    if (!user) { alert('로그인이 필요합니다.'); goLogin(); return }
     if (!title.trim()) { alert('제목을 입력해주세요.'); return }
     if (!content.trim()) { alert('내용을 입력해주세요.'); return }
     setLoading(true)
@@ -65,7 +68,7 @@ export default function PostWritePage({ user, onLogout }) {
 
   return (
     <UserShell user={user} onLogout={onLogout} active="community">
-      <div style={{ maxWidth: 760, margin: '0 auto', padding: isMobile ? '16px 16px 24px' : '26px 30px' }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: isMobile ? '16px 16px 24px' : '26px 48px' }}>
         {/* 뒤로가기를 제목 위에 두는 흔한 형태. 한 줄에 나란히 두면 제목이 버튼에 딸린 것처럼 보인다.
             padding:0 으로 버튼 기본 여백을 없애야 아래 제목과 왼쪽 선이 맞는다. */}
         <div style={{ marginBottom: 20 }}>
@@ -138,8 +141,8 @@ export default function PostWritePage({ user, onLogout }) {
               <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {files.map((file, idx) => (
                   <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 13px' }}>
-                    <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>📎 {file.name}</span>
-                    <button onClick={() => setFiles(prev => prev.filter((_, i) => i !== idx))} style={{ border: 'none', background: 'transparent', color: 'var(--danger)', fontSize: 14, cursor: 'pointer' }}>✕</button>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-muted)' }}><Icon name="paperclip" size={14} /> {file.name}</span>
+                    <button onClick={() => setFiles(prev => prev.filter((_, i) => i !== idx))} style={{ border: 'none', background: 'transparent', color: 'var(--danger)', cursor: 'pointer', display: 'flex', padding: 0 }}><Icon name="x" size={16} /></button>
                   </div>
                 ))}
               </div>

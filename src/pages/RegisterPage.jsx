@@ -14,7 +14,7 @@ const FIELDS = [
   { name: 'passwordConfirm', label: '비밀번호 확인', type: 'password', placeholder: '비밀번호 재입력', icon: lockIcon },
 ]
 
-export default function RegisterPage({ onGoLogin }) {
+export default function RegisterPage({ onGoLogin, modal = false, onClose }) {
   const [form, setForm] = useState({ username: '', nickname: '', email: '', password: '', passwordConfirm: '' })
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
@@ -56,7 +56,7 @@ export default function RegisterPage({ onGoLogin }) {
 
   if (success) {
     return (
-      <AuthLayout>
+      <AuthLayout modal={modal} onClose={onClose}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '20px 0' }}>
           <div style={{
             width: 56, height: 56, borderRadius: 16, background: 'rgba(16,185,129,.13)', color: 'var(--safe)',
@@ -72,7 +72,7 @@ export default function RegisterPage({ onGoLogin }) {
   }
 
   return (
-    <AuthLayout>
+    <AuthLayout modal={modal} onClose={onClose}>
       <AuthLogo subtitle="새 계정을 만들어주세요" />
 
       {FIELDS.map(f => (

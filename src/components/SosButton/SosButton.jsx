@@ -3,6 +3,7 @@
 // 백엔드 연동 보존: geolocation → POST /emergency-reports
 import { useState, useRef, useEffect } from 'react'
 import useIsMobile from '../../hooks/useIsMobile'
+import Icon from '../Icon'
 
 export default function SosButton({ user }) {
   // 모바일에서는 지도를 너무 가려 대기 버튼을 데스크탑의 1/2 크기로 줄인다(88 → 44px).
@@ -203,12 +204,12 @@ export default function SosButton({ user }) {
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(225,29,72,.10)', color: 'var(--danger)', fontSize: 12, fontWeight: 700, padding: '5px 11px', borderRadius: 20 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--danger)', animation: 'ls-blink 1.2s infinite' }} />🔊 사이렌 켜짐
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--danger)', animation: 'ls-blink 1.2s infinite' }} /><Icon name="volume" size={13} /> 사이렌 켜짐
               </span>
-              <span style={{ background: 'var(--blue-tint)', color: 'var(--blue-primary)', fontSize: 12, fontWeight: 700, padding: '5px 11px', borderRadius: 20 }}>📍 위험구역 자동 등록</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--blue-tint)', color: 'var(--blue-primary)', fontSize: 12, fontWeight: 700, padding: '5px 11px', borderRadius: 20 }}><Icon name="map-pin" size={13} /> 위험구역 자동 등록</span>
             </div>
           </div>
-          <div onClick={() => setPhase('idle')} style={{ color: 'var(--text-muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</div>
+          <div onClick={() => setPhase('idle')} style={{ color: 'var(--text-muted)', cursor: 'pointer', lineHeight: 1, display: 'flex' }}><Icon name="x" size={20} /></div>
         </div>
       )}
     </>

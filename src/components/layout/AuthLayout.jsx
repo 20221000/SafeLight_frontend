@@ -1,9 +1,49 @@
 // 로그인/회원가입 공통 배경 — 화이트&블루 지도 그리드 앰비언스 + 중앙 카드
 // 모바일(M2·M3)에서는 카드 여백을 줄여 입력 폭을 확보하고, 주소창 높이 변화에 100dvh로 대응한다.
+// modal 모드(데스크탑): 뒤 페이지를 남겨둔 채 블러 오버레이 위에 카드만 띄운다.
 import useIsMobile from '../../hooks/useIsMobile'
+import Icon from '../Icon'
 
-export default function AuthLayout({ children, width = 420 }) {
+export default function AuthLayout({ children, width = 420, modal = false, onClose }) {
   const isMobile = useIsMobile()
+
+  // 데스크탑 모달: 현재 페이지를 블러 처리한 위로 로그인 카드만 뜬다.
+  if (modal && !isMobile) {
+    return (
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 24, background: 'rgba(15,23,42,.30)', backdropFilter: 'blur(7px)', WebkitBackdropFilter: 'blur(7px)',
+        }}
+      >
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{
+            position: 'relative', width, maxWidth: '92vw', maxHeight: 'calc(100dvh - 48px)', overflowY: 'auto',
+            background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 20,
+            boxShadow: '0 24px 64px rgba(15,23,42,.30)', padding: '40px 38px',
+          }}
+        >
+          {onClose && (
+            <button
+              onClick={onClose}
+              aria-label="닫기"
+              style={{
+                position: 'absolute', top: 14, right: 14, width: 34, height: 34, borderRadius: 9, border: 'none',
+                background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Icon name="x" size={20} />
+            </button>
+          )}
+          {children}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{
       width: '100%', minHeight: '100dvh', overflowY: 'auto', background: 'var(--bg)', color: 'var(--text-strong)',

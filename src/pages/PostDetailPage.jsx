@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import UserShell from '../components/layout/UserShell'
 import useIsMobile from '../hooks/useIsMobile'
+import useAuthNav from '../hooks/useAuthNav'
+import Icon from '../components/Icon'
 import { POST_CATEGORY } from '../theme/tokens'
 
 function CategoryBadge({ category }) {
@@ -71,6 +73,7 @@ function CommentComposer({ value, onChange, onSubmit, placeholder, isMobile }) {
 export default function PostDetailPage({ user, onLogout }) {
   const isMobile = useIsMobile() // 모바일: 페이지 여백 축소(데스크탑 48/30px는 375px에서 너무 넓다)
   const navigate = useNavigate()
+  const { goLogin } = useAuthNav()
   const { postId } = useParams()
 
   const [post, setPost] = useState(null)
@@ -105,7 +108,7 @@ export default function PostDetailPage({ user, onLogout }) {
   }
 
   const handleLike = async () => {
-    if (!user) { alert('로그인이 필요합니다.'); navigate('/login'); return }
+    if (!user) { alert('로그인이 필요합니다.'); goLogin(); return }
     const token = localStorage.getItem('accessToken')
     if (isLiked) {
       await fetch(`/posts/${postId}/likes`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
@@ -118,7 +121,7 @@ export default function PostDetailPage({ user, onLogout }) {
 
   const handleCommentSubmit = async () => {
     if (!commentInput.trim()) return
-    if (!user) { alert('로그인이 필요합니다.'); navigate('/login'); return }
+    if (!user) { alert('로그인이 필요합니다.'); goLogin(); return }
     const token = localStorage.getItem('accessToken')
     const res = await fetch(`/posts/${postId}/comments`, {
       method: 'POST',
@@ -173,7 +176,7 @@ export default function PostDetailPage({ user, onLogout }) {
 
   return (
     <UserShell user={user} onLogout={onLogout} active="community">
-      <div style={{ maxWidth: 760, margin: '0 auto', padding: isMobile ? '16px 16px 24px' : '26px 30px' }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: isMobile ? '16px 16px 24px' : '26px 48px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
           <button onClick={() => navigate('/community')} style={{ display: 'flex', alignItems: 'center', gap: 5, border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>목록으로
@@ -199,8 +202,8 @@ export default function PostDetailPage({ user, onLogout }) {
               <Avatar name={post.nickname} size={30} />
               <span style={{ fontSize: 14, fontWeight: 600 }}>{post.nickname}</span>
               <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{post.createdAt?.slice(0, 10)}</span>
-              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>👁 {post.viewCount}</span>
-              {!isNotice && <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>❤ {likeCount}</span>}
+              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}><Icon name="eye" size={14} /> {post.viewCount}</span>
+              {!isNotice && <span style={{ fontSize: 13, color: 'var(--text-muted)' }}><Icon name="heart" size={14} /> {likeCount}</span>}
             </div>
             <div style={{ height: 1, background: 'var(--border)', margin: '18px 0' }} />
 
@@ -212,11 +215,11 @@ export default function PostDetailPage({ user, onLogout }) {
             {/* 첨부파일 */}
             {post.attachments && post.attachments.length > 0 && (
               <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>📎 첨부파일</div>
+                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}><Icon name="paperclip" size={15} color="var(--blue-primary)" /> 첨부파일</div>
                 {post.attachments.map(file => (
                   <a key={file.attachmentId} href={`/posts/attachments/${file.attachmentId}`} download={file.originalFilename} onClick={e => downloadAttachment(e, file)}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', marginBottom: 6, fontSize: 13, color: 'var(--text-muted)' }}>
-                    <span>📄 {file.originalFilename}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Icon name="file" size={14} /> {file.originalFilename}</span>
                     <span style={{ fontSize: 11 }}>{file.size ? `${(file.size / 1024).toFixed(1)}KB` : ''}</span>
                   </a>
                 ))}
@@ -232,11 +235,11 @@ export default function PostDetailPage({ user, onLogout }) {
                     border: `1px solid ${isLiked ? 'var(--danger)' : 'var(--border)'}`,
                     background: isLiked ? 'rgba(225,29,72,.08)' : 'var(--surface)',
                     color: isLiked ? 'var(--danger)' : 'var(--text-muted)',
-                  }}>❤ 좋아요 {likeCount}</button>
-                  <button onClick={() => { navigator.clipboard.writeText(window.location.href); alert('링크가 복사되었습니다.') }} style={{ flex: 1, height: 44, borderRadius: 11, fontSize: 14, cursor: 'pointer', fontWeight: 600, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-muted)', fontFamily: 'inherit' }}>🔗 공유하기</button>
+                  }}><Icon name="heart" size={16} /> 좋아요 {likeCount}</button>
+                  <button onClick={() => { navigator.clipboard.writeText(window.location.href); alert('링크가 복사되었습니다.') }} style={{ flex: 1, height: 44, borderRadius: 11, fontSize: 14, cursor: 'pointer', fontWeight: 600, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-muted)', fontFamily: 'inherit' }}><Icon name="link" size={16} /> 공유하기</button>
                 </div>
 
-                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>💬 댓글 {comments.length}개</div>
+                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}><Icon name="message" size={17} color="var(--blue-primary)" /> 댓글 {comments.length}개</div>
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: 20 }}>
                   {/* 모바일에서는 내 아바타를 빼고 그 폭을 입력칸에 준다. 좁은 기기(280px)에서는
                       아바타·줄바꿈·등록이 다 들어가면 입력칸이 30px까지 눌려 쓸 수 없다. */}
@@ -250,7 +253,7 @@ export default function PostDetailPage({ user, onLogout }) {
                       isMobile={isMobile}
                     />
                   ) : (
-                    <div onClick={() => { alert('로그인이 필요합니다.'); navigate('/login') }} style={{ ...commentInputStyle, display: 'flex', alignItems: 'center', cursor: 'pointer', color: 'var(--text-muted)' }}>댓글을 작성하려면 로그인이 필요합니다.</div>
+                    <div onClick={() => { alert('로그인이 필요합니다.'); goLogin() }} style={{ ...commentInputStyle, display: 'flex', alignItems: 'center', cursor: 'pointer', color: 'var(--text-muted)' }}>댓글을 작성하려면 로그인이 필요합니다.</div>
                   )}
                 </div>
 

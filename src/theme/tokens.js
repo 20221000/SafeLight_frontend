@@ -8,14 +8,6 @@ export const LEVEL_STYLE = {
   LOW:    { color: 'var(--safe)',    bg: 'rgba(16,185,129,.13)', label: 'LOW' },
 }
 
-// 긴급신고 처리 상태 (관리자 신고 관리)
-export const REPORT_STATUS = {
-  RECEIVED:   { color: 'var(--info)',    bg: 'var(--blue-tint)',     label: '접수' },
-  PROCESSING: { color: 'var(--warning)', bg: 'rgba(245,158,11,.13)', label: '처리중' },
-  RESOLVED:   { color: 'var(--safe)',    bg: 'rgba(16,185,129,.13)', label: '해결' },
-  FALSE:      { color: 'var(--text-muted)', bg: 'rgba(100,116,139,.12)', label: '오탐' },
-}
-
 // 커뮤니티 게시글 카테고리
 export const POST_CATEGORY = {
   NOTICE:   { color: 'var(--blue-primary)', bg: 'var(--blue-tint)',      label: '공지' },

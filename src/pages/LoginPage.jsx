@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import AuthLayout, { AuthLogo, AuthField } from '../components/layout/AuthLayout'
 
-export default function LoginPage({ onLogin, onGoRegister }) {
+export default function LoginPage({ onLogin, onGoRegister, modal = false, onClose }) {
   const [form, setForm] = useState({ usernameOrEmail: '', password: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -51,7 +51,7 @@ export default function LoginPage({ onLogin, onGoRegister }) {
   const onEnter = e => e.key === 'Enter' && handleSubmit()
 
   return (
-    <AuthLayout>
+    <AuthLayout modal={modal} onClose={onClose}>
       <AuthLogo subtitle="안전한 밤길, 로그인하고 시작하세요" />
 
       <AuthField
@@ -88,17 +88,9 @@ export default function LoginPage({ onLogin, onGoRegister }) {
         {loading ? '로그인 중...' : '로그인'}
       </button>
 
-      <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-muted)', marginTop: 20 }}>
+      <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-muted)', marginTop: 22 }}>
         아직 계정이 없으신가요?{' '}
         <span onClick={onGoRegister} style={{ color: 'var(--blue-primary)', fontWeight: 600, cursor: 'pointer' }}>회원가입</span>
-      </div>
-
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 9, marginTop: 22, padding: '11px 13px',
-        background: 'var(--blue-tint)', borderRadius: 11, fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.6,
-      }}>
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--blue-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg>
-        <span>관리자 계정으로 로그인하면 자동으로 <b style={{ color: 'var(--text-strong)' }}>관리자 콘솔</b>로 이동합니다.</span>
       </div>
     </AuthLayout>
   )

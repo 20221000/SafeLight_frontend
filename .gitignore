@@ -42,3 +42,6 @@ dist
 # 에디터
 .DS_Store
 .vscode
+
+# Claude Code 로컬 설정
+.claude/

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import UserShell from '../components/layout/UserShell'
 import useIsMobile from '../hooks/useIsMobile'
+import useAuthNav from '../hooks/useAuthNav'
+import Icon from '../components/Icon'
 import { POST_CATEGORY } from '../theme/tokens'
 
 // 탭 라벨 → 백엔드 카테고리. '안전 신고'는 커뮤니티 신고글(REPORT), 원클릭 긴급신고와 무관.
@@ -24,6 +26,7 @@ export default function CommunityPage({ user, onLogout }) {
   // 모바일(M5): 사이드바를 피드 아래로 내리고, 글쓰기는 목업대로 플로팅 FAB.
   const isMobile = useIsMobile()
   const navigate = useNavigate()
+  const { goLogin } = useAuthNav()
 
   const [activeCategory, setActiveCategory] = useState('전체')
   const [searchInput, setSearchInput] = useState('')
@@ -94,7 +97,7 @@ export default function CommunityPage({ user, onLogout }) {
               <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>동네 안전 정보를 나누는 공간</div>
             </div>
             <button
-              onClick={() => { if (!user) { alert('로그인이 필요합니다.'); navigate('/login'); return } navigate('/community/write') }}
+              onClick={() => { if (!user) { alert('로그인이 필요합니다.'); goLogin(); return } navigate('/community/write') }}
               title="글쓰기"
               style={isMobile ? {
                 position: 'fixed', right: 16, bottom: 'calc(72px + env(safe-area-inset-bottom))', zIndex: 30,
@@ -173,7 +176,7 @@ export default function CommunityPage({ user, onLogout }) {
                   <CategoryBadge category="NOTICE" />
                   <span style={{ flex: 1, fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{notice.title}</span>
                   <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{notice.createdAt?.slice(0, 10)}</span>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>👁 {notice.viewCount}</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}><Icon name="eye" size={13} /> {notice.viewCount}</span>
                 </div>
               ))}
             </div>
@@ -197,9 +200,9 @@ export default function CommunityPage({ user, onLogout }) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14, fontSize: 12, color: 'var(--text-muted)' }}>
                     <span>{post.nickname}</span>
                     <span>{post.createdAt?.slice(0, 10)}</span>
-                    <span>👁 {post.viewCount}</span>
-                    <span>❤ {post.likeCount}</span>
-                    <span>💬 {post.commentCount}</span>
+                    <span><Icon name="eye" size={13} /> {post.viewCount}</span>
+                    <span><Icon name="heart" size={13} /> {post.likeCount}</span>
+                    <span><Icon name="message" size={13} /> {post.commentCount}</span>
                   </div>
                 </div>
               ))
@@ -223,21 +226,21 @@ export default function CommunityPage({ user, onLogout }) {
         {/* 우측 컬럼 */}
         <aside style={{ width: isMobile ? '100%' : 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 18 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>🔥 인기 게시글</div>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}><Icon name="flame" size={15} color="var(--blue-primary)" /> 인기 게시글</div>
             {popularPosts.length > 0 ? popularPosts.map((post, idx) => (
               <div key={post.postId} onClick={() => handlePostClick(post.postId)} style={{ display: 'flex', gap: 10, marginBottom: 12, cursor: 'pointer' }}>
                 <span style={{ width: 22, height: 22, borderRadius: 7, background: 'var(--blue-tint)', color: 'var(--blue-primary)', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: "'Inter',sans-serif" }}>{idx + 1}</span>
                 {/* minWidth:0 — 긴 제목이 칸을 넘치지 않게. */}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, marginBottom: 4, lineHeight: 1.4, wordBreak: 'break-word' }}>{post.title}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>❤ {post.likeCount}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}><Icon name="heart" size={12} /> {post.likeCount}</div>
                 </div>
               </div>
             )) : <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>데이터 준비 중입니다.</div>}
           </div>
 
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 18 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>📊 커뮤니티 통계</div>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}><Icon name="bar-chart" size={15} color="var(--blue-primary)" /> 커뮤니티 통계</div>
             {[
               { label: '전체 게시글', value: pageInfo?.totalElements },
               { label: '오늘 게시글', value: stats.todayPosts },

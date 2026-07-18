@@ -1,5 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import useIsMobile from '../../hooks/useIsMobile'
+import Icon from '../Icon'
+import { iconSvg } from '../iconSvg'
 
 async function fetchMarkerData() {
   try {
@@ -98,7 +100,7 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
           font-size:11px;font-weight:700;
           box-shadow:0 2px 6px rgba(0,0,0,0.3);
           white-space:nowrap;
-        ">⚠️ ${zone.dangerLevel}</div>
+        ">${iconSvg('alert-triangle', { size: 12, color: '#fff' })} ${zone.dangerLevel}</div>
       `
       const overlay = new window.kakao.maps.CustomOverlay({
         position: center, content, yAnchor: 1.5,
@@ -322,7 +324,7 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
     searchMarkerRef.current?.setMap(null)
     const content = `
       <div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-4px);">
-        <div style="background:#2563EB;color:#fff;padding:5px 11px;border-radius:16px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 3px 10px rgba(37,99,235,0.4);">📍 ${searchTarget.name ?? '검색 위치'}</div>
+        <div style="background:#2563EB;color:#fff;padding:5px 11px;border-radius:16px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 3px 10px rgba(37,99,235,0.4);">${iconSvg('map-pin', { size: 13, color: '#fff' })} ${searchTarget.name ?? '검색 위치'}</div>
         <div style="width:2px;height:9px;background:#2563EB;"></div>
       </div>
     `
@@ -345,16 +347,16 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
           color: '#fff', fontSize: isMobile ? 11.5 : 13, fontWeight: 700,
           boxShadow: 'var(--shadow)', whiteSpace: 'nowrap',
         }}>
-          🧭 경로 안내 중 · CCTV {routeState.safetyScore}개 경유
+          <Icon name="compass" size={isMobile ? 13 : 15} /> 경로 안내 중 · CCTV {routeState.safetyScore}개 경유
         </div>
       )}
 
       {/* 레이어 칩 (좌상단) */}
       <div style={{ position: 'absolute', top: 16, left: isMobile ? 12 : 16, zIndex: 10, display: 'flex', gap: isMobile ? 6 : 8 }}>
         {[
-          { key: 'cctv', emoji: '📷', label: 'CCTV' },
-          { key: 'streetLamp', emoji: '💡', label: '가로등' },
-          { key: 'safeZone', emoji: '🛡️', label: '안전구역' },
+          { key: 'cctv', icon: 'camera', label: 'CCTV' },
+          { key: 'streetLamp', icon: 'lightbulb', label: '가로등' },
+          { key: 'safeZone', icon: 'shield-check', label: '안전구역' },
         ].map(ly => {
           const on = !!filters?.[ly.key]
           return (
@@ -371,7 +373,7 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
                 color: on ? '#fff' : 'var(--text-muted)', fontFamily: 'inherit',
               }}
             >
-              <span style={{ fontSize: isMobile ? 10 : 12.5 }}>{ly.emoji}</span><span>{ly.label}</span>
+              <Icon name={ly.icon} size={isMobile ? 13 : 15} /><span>{ly.label}</span>
             </button>
           )
         })}

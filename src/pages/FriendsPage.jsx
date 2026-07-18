@@ -99,7 +99,7 @@ export default function FriendsPage({ user, onLogout }) {
 
   return (
     <UserShell user={user} onLogout={onLogout} active="myinfo">
-      <div style={{ maxWidth: 720, margin: '0 auto', padding: isMobile ? '16px 16px 24px' : '26px 30px', display: 'flex', flexDirection: 'column', gap: isMobile ? 12 : 16 }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: isMobile ? '16px 16px 24px' : '26px 48px', display: 'flex', flexDirection: 'column', gap: isMobile ? 12 : 16 }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.4px' }}>친구 관리</div>
           <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>긴급 위치 공유를 허용할 친구를 관리하세요</div>

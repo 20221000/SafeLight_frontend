@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import UserShell from '../components/layout/UserShell'
 import useIsMobile from '../hooks/useIsMobile'
+import Icon from '../components/Icon'
 import useDragSheet from '../hooks/useDragSheet'
 import useSheetHeadHeight from '../hooks/useSheetHeadHeight'
 import { SHEET_COLLAPSED } from '../components/layout/BottomSheet'
@@ -310,8 +311,8 @@ export default function RoutePage({ user, onLogout }) {
             {/* 출발지 */}
             <Card title="① 출발지">
               <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                <ModeBtn active={startMode === 'current'} onClick={() => { setStartMode('current'); setStartResult([]) }}>📍 현재 위치</ModeBtn>
-                <ModeBtn active={startMode === 'search'} onClick={() => setStartMode('search')}>🔍 직접 검색</ModeBtn>
+                <ModeBtn active={startMode === 'current'} onClick={() => { setStartMode('current'); setStartResult([]) }}><Icon name="map-pin" size={14} /> 현재 위치</ModeBtn>
+                <ModeBtn active={startMode === 'search'} onClick={() => setStartMode('search')}><Icon name="search" size={14} /> 직접 검색</ModeBtn>
               </div>
               {startMode === 'current' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 11, padding: '11px 13px' }}>
@@ -335,19 +336,19 @@ export default function RoutePage({ user, onLogout }) {
             {/* 도착지 */}
             <Card title="② 도착지">
               <div style={{ display: 'flex', marginBottom: 12, borderBottom: '1px solid var(--border)' }}>
-                <TabBtn active={destMode === 'bookmark'} onClick={() => setDestMode('bookmark')}>⭐ 북마크</TabBtn>
-                <TabBtn active={destMode === 'search'} onClick={() => setDestMode('search')}>🔍 직접 검색</TabBtn>
+                <TabBtn active={destMode === 'bookmark'} onClick={() => setDestMode('bookmark')}><Icon name="star" size={14} /> 북마크</TabBtn>
+                <TabBtn active={destMode === 'search'} onClick={() => setDestMode('search')}><Icon name="search" size={14} /> 직접 검색</TabBtn>
               </div>
               {destMode === 'bookmark' && (
                 bookmarks.length > 0 ? bookmarks.map(bm => (
                   <div key={bm.id} onClick={() => handleBookmarkRoute(bm)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 8px', borderRadius: 10, cursor: 'pointer' }}>
-                    <span style={{ fontSize: 18 }}>⭐</span>
+                    <Icon name="star" size={18} color="var(--blue-primary)" />
                     {/* minWidth:0 — 긴 경로 이름이 삭제(✕) 버튼을 밀어내지 않게. */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{bm.routeName}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>CCTV {bm.safetyScore}개</div>
                     </div>
-                    <button onClick={e => { e.stopPropagation(); handleBookmarkDelete(bm.id) }} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer' }}>✕</button>
+                    <button onClick={e => { e.stopPropagation(); handleBookmarkDelete(bm.id) }} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: 0 }}><Icon name="x" size={16} /></button>
                   </div>
                 )) : <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '20px 0' }}>저장된 북마크가 없습니다.</div>
               )}
@@ -361,7 +362,7 @@ export default function RoutePage({ user, onLogout }) {
 
             {!isSearched && (
               <button onClick={handleSearchRoute} disabled={loading} style={{ width: '100%', height: 48, border: 'none', borderRadius: 12, background: 'var(--blue-primary)', color: '#fff', fontSize: 15, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? .7 : 1, boxShadow: '0 6px 16px rgba(37,99,235,.28)', fontFamily: 'inherit' }}>
-                {loading ? '경로 탐색 중...' : '🔍 안전 경로 찾기'}
+                {loading ? '경로 탐색 중...' : <><Icon name="search" size={16} /> 안전 경로 찾기</>}
               </button>
             )}
 
@@ -388,11 +389,11 @@ export default function RoutePage({ user, onLogout }) {
                 })}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
                   <button onClick={() => { if (!selectedRoute) return; navigate('/', { state: { routeActive: true, routePath: selectedRoute.path, start: selectedStart, dest: selectedDest, safetyScore: selectedRoute.safetyScore } }) }}
-                    style={{ width: '100%', height: 44, border: 'none', borderRadius: 11, background: 'var(--blue-primary)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>▶ 지도에서 경로 보기</button>
+                    style={{ width: '100%', height: 44, border: 'none', borderRadius: 11, background: 'var(--blue-primary)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}><Icon name="play" size={15} /> 지도에서 경로 보기</button>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={handleBookmarkSave} style={{ flex: 1, height: 42, border: '1px solid var(--blue-primary)', borderRadius: 11, background: 'var(--surface)', color: 'var(--blue-primary)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>⭐ 북마크 저장</button>
+                    <button onClick={handleBookmarkSave} style={{ flex: 1, height: 42, border: '1px solid var(--blue-primary)', borderRadius: 11, background: 'var(--surface)', color: 'var(--blue-primary)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}><Icon name="star" size={15} /> 북마크 저장</button>
                     <button onClick={() => { setIsSearched(false); setRoutes([]); setSelectedRoute(null); clearPolylines(); clearMarkers(); setSelectedStart(null); setSelectedDest(null); setStartSearch(''); setDestSearch(''); setStartMode('current') }}
-                      style={{ flex: 1, height: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--surface)', color: 'var(--text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>🔄 다시 검색</button>
+                      style={{ flex: 1, height: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--surface)', color: 'var(--text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}><Icon name="refresh" size={15} /> 다시 검색</button>
                   </div>
                 </div>
               </Card>
@@ -430,12 +431,12 @@ export default function RoutePage({ user, onLogout }) {
               padding: 16, minWidth: 260, boxShadow: 'var(--shadow)',
             }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                <span style={{ fontSize: 16 }}>📍</span>
+                <Icon name="map-pin" size={16} color="var(--blue-primary)" style={{ marginTop: 1 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-.2px' }}>{pendingPlace.name}</div>
                   {pendingPlace.address && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>{pendingPlace.address}</div>}
                 </div>
-                <button onClick={() => setPendingPlace(null)} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: 15, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+                <button onClick={() => setPendingPlace(null)} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', lineHeight: 1, display: 'flex', padding: 0 }}><Icon name="x" size={17} /></button>
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                 <button onClick={applyPendingAsStart} style={{ flex: 1, height: 40, border: 'none', borderRadius: 10, background: START_COLOR, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>출발지로 설정</button>
@@ -486,7 +487,7 @@ function ResultList({ list, onPick, color }) {
     <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', marginTop: 4 }}>
       {list.map((place, idx) => (
         <div key={idx} onClick={() => onPick(place)} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}>
-          <span style={{ color }}>📍</span>
+          <Icon name="map-pin" size={15} color={color} style={{ marginTop: 1 }} />
           <div>
             <div style={{ fontSize: 13, fontWeight: 600 }}>{place.name}</div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{place.address}</div>
