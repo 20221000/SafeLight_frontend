@@ -4,6 +4,7 @@
 import { useState, useRef, useEffect } from 'react'
 import useIsMobile from '../../hooks/useIsMobile'
 import Icon from '../Icon'
+import { readEnvelope } from '../../utils/apiResponse'
 
 export default function SosButton({ user }) {
   // 모바일에서는 지도를 너무 가려 대기 버튼을 데스크탑의 1/2 크기로 줄인다(88 → 44px).
@@ -61,7 +62,7 @@ export default function SosButton({ user }) {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ latitude, longitude, description: '긴급 신고' }),
       })
-      const json = await res.json()
+      const json = await readEnvelope(res)
 
       if (!json.success) {
         alert(json.error?.message || json.message || '신고 접수에 실패했습니다.')

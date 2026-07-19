@@ -4,6 +4,7 @@ import UserShell from '../components/layout/UserShell'
 import useIsMobile from '../hooks/useIsMobile'
 import useAuthNav from '../hooks/useAuthNav'
 import Icon from '../components/Icon'
+import { readEnvelope } from '../utils/apiResponse'
 
 // NOTICE(공지)는 관리자 전용이라 제외. REPORT는 커뮤니티 '안전 신고' 글(원클릭 긴급신고와 무관).
 const CATEGORIES = ['INFO', 'QUESTION', 'REPORT', 'TIP']
@@ -47,16 +48,16 @@ export default function PostWritePage({ user, onLogout }) {
         formData.append('userId', user.userId)
         files.forEach(file => formData.append('files', file))
         const res = await fetch('/posts/with-files', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData })
-        const json = await res.json()
-        if (!json.success) { alert('게시글 등록에 실패했습니다.'); return }
+        const json = await readEnvelope(res)
+        if (!json.success) { alert(json.message || '게시글 등록에 실패했습니다.'); return }
       } else {
         const res = await fetch('/posts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ title, content, category, userId: user.userId }),
         })
-        const json = await res.json()
-        if (!json.success) { alert('게시글 등록에 실패했습니다.'); return }
+        const json = await readEnvelope(res)
+        if (!json.success) { alert(json.message || '게시글 등록에 실패했습니다.'); return }
       }
       navigate('/community')
     } catch {

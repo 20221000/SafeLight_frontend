@@ -6,6 +6,8 @@ import Icon from '../components/Icon'
 import useDragSheet from '../hooks/useDragSheet'
 import useSheetHeadHeight from '../hooks/useSheetHeadHeight'
 import { SHEET_COLLAPSED } from '../components/layout/BottomSheet'
+import { readEnvelope } from '../utils/apiResponse'
+import { saveActiveRoute } from '../utils/activeRoute'
 
 const START_COLOR = '#2563EB'
 const DEST_COLOR = '#E11D48'
@@ -51,6 +53,7 @@ export default function RoutePage({ user, onLogout }) {
 
   const [startMode, setStartMode] = useState('current')
   const [currentLocation, setCurrentLocation] = useState(null)
+  const [startAddress, setStartAddress] = useState('') // 현재 위치의 사람이 읽는 주소 (역지오코딩)
   const [startSearch, setStartSearch] = useState('')
   const [startResult, setStartResult] = useState([])
   const [selectedStart, setSelectedStart] = useState(null)
@@ -60,6 +63,7 @@ export default function RoutePage({ user, onLogout }) {
   const [destResult, setDestResult] = useState([])
   const [selectedDest, setSelectedDest] = useState(null)
 
+  const [mapReady, setMapReady] = useState(false) // 카카오 지도 인스턴스 생성 완료 (마커 동기화 시점)
   const [pendingPlace, setPendingPlace] = useState(null) // 상단 검색에서 넘어온 장소 (출발/도착 선택 대기)
   const [routes, setRoutes] = useState([])
   const [selectedRoute, setSelectedRoute] = useState(null)
@@ -86,8 +90,9 @@ export default function RoutePage({ user, onLogout }) {
           border: '2px solid #fff', boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
         }],
       })
-      fetch('/cctvs').then(r => r.json()).then(json => {
-        if (!json.success) return
+      setMapReady(true)
+      fetch('/cctvs').then(readEnvelope).then(json => {
+        if (!json.success || !json.data) return
         kakaoMarkersRef.current = json.data.map(item => new window.kakao.maps.Marker({ position: new window.kakao.maps.LatLng(item.latitude, item.longitude) }))
         clustererRef.current.addMarkers(kakaoMarkersRef.current)
       }).catch(err => console.error('CCTV 로드 실패:', err))
@@ -99,6 +104,16 @@ export default function RoutePage({ user, onLogout }) {
     }
   }, [])
 
+  // 좌표 → 도로명(없으면 지번) 주소. 카카오 services 로 처리하므로 백엔드가 필요 없다.
+  const reverseGeocode = useCallback((lat, lng) => new Promise((resolve) => {
+    if (!window.kakao?.maps?.services) { resolve(''); return }
+    const geocoder = new window.kakao.maps.services.Geocoder()
+    geocoder.coord2Address(lng, lat, (result, status) => {
+      if (status !== window.kakao.maps.services.Status.OK || !result?.length) { resolve(''); return }
+      resolve(result[0].road_address?.address_name || result[0].address?.address_name || '')
+    })
+  }), [])
+
   useEffect(() => {
     if (startMode === 'current') {
       navigator.geolocation?.getCurrentPosition(
@@ -106,20 +121,23 @@ export default function RoutePage({ user, onLogout }) {
           const { latitude, longitude } = pos.coords
           setCurrentLocation({ lat: latitude, lng: longitude })
           setSelectedStart({ lat: latitude, lng: longitude, name: '현재 위치' })
+          // 주소를 알아내면 출발지 이름도 주소로 바꾼다 — 북마크 routeName 이 '현재 위치 → …'
+          // 처럼 나중에 알아볼 수 없는 이름으로 저장되는 걸 막는다.
+          reverseGeocode(latitude, longitude).then(addr => {
+            if (!addr) return
+            setStartAddress(addr)
+            setSelectedStart(prev => (prev && prev.lat === latitude && prev.lng === longitude ? { ...prev, name: addr } : prev))
+          })
           if (mapInstance.current) {
-            const latlng = new window.kakao.maps.LatLng(latitude, longitude)
             mapInstance.current.setLevel(4)
-            centerOnVisible(latlng)
-            addMarker(latlng, '출발', START_COLOR)
+            centerOnVisible(new window.kakao.maps.LatLng(latitude, longitude))
           }
         },
         () => setCurrentLocation(null),
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       )
     }
-  }, [startMode, centerOnVisible])
-
-  useEffect(() => { fetchBookmarks() }, [])
+  }, [startMode, centerOnVisible, reverseGeocode])
 
   // 좌측 패널 접힘/펼침 등으로 지도 컨테이너 크기가 바뀌면 카카오 지도 relayout (안 하면 타일이 잘림)
   useEffect(() => {
@@ -132,13 +150,18 @@ export default function RoutePage({ user, onLogout }) {
     return () => ro.disconnect()
   }, [])
 
-  const fetchBookmarks = async () => {
+  // 선언을 effect보다 앞에 둔다 — effect에서 아직 선언 전인 const 를 참조하면 안 된다.
+  // authHeader 는 렌더마다 새 객체라 의존성으로 쓸 수 없어, 토큰에서 헤더를 직접 만든다.
+  const fetchBookmarks = useCallback(async () => {
     try {
-      const res = await fetch('/bookmarks', { headers: authHeader })
-      const json = await res.json()
+      const res = await fetch('/bookmarks', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      const json = await readEnvelope(res)
       if (json.success) setBookmarks(json.data ?? [])
+      else console.warn('북마크 조회 실패:', json.message)
     } catch (err) { console.error('북마크 조회 실패:', err) }
-  }
+  }, [token])
+
+  useEffect(() => { fetchBookmarks() }, [fetchBookmarks])
 
   const searchPlace = (keyword, setResult) => {
     if (!keyword.trim() || !window.kakao) return
@@ -150,35 +173,46 @@ export default function RoutePage({ user, onLogout }) {
     })
   }
 
-  const clearMarkers = () => { markersRef.current.forEach(m => m.setMap(null)); markersRef.current = [] }
+  const clearMarkers = useCallback(() => { markersRef.current.forEach(m => m.setMap(null)); markersRef.current = [] }, [])
   const clearPolylines = () => { polylinesRef.current.forEach(p => p.setMap(null)); polylinesRef.current = [] }
 
-  const addMarker = (latlng, label, color) => {
+  const addMarker = useCallback((latlng, label, color) => {
     if (!mapInstance.current) return
     const content = `<div style="background:${color};border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.25);">${label}</div>`
     const overlay = new window.kakao.maps.CustomOverlay({ position: latlng, content, yAnchor: 1 })
     overlay.setMap(mapInstance.current)
     markersRef.current.push(overlay)
+  }, [])
+
+  // 출발·도착 마커는 오직 여기서만 그린다. 선택 상태가 바뀔 때마다 전부 지우고 다시 찍으므로
+  // 출발 1개 + 도착 1개가 보장된다.
+  // (이전에는 핸들러와 위치조회 effect가 각자 addMarker 를 불러서, 현재위치↔직접검색을 오가거나
+  //  위치 조회가 다시 돌 때마다 같은 자리에 마커가 겹겹이 쌓였다.)
+  useEffect(() => {
+    if (!mapReady) return
+    clearMarkers()
+    if (selectedStart) addMarker(new window.kakao.maps.LatLng(selectedStart.lat, selectedStart.lng), '출발', START_COLOR)
+    if (selectedDest) addMarker(new window.kakao.maps.LatLng(selectedDest.lat, selectedDest.lng), '도착', DEST_COLOR)
+  }, [mapReady, selectedStart, selectedDest, clearMarkers, addMarker])
+
+  // '현재 위치'가 실제와 다를 때(GPS 오차·실내 등) 사용자가 직접 고칠 수 있게 한다.
+  // 검색 모드로 넘기면서 지금 주소를 미리 채워 넣고 후보까지 띄워준다.
+  const handleEditStart = () => {
+    const seed = startAddress || startSearch
+    setStartMode('search')
+    setStartSearch(seed)
+    if (seed) searchPlace(seed, setStartResult)
   }
 
+  // 마커는 위 동기화 effect가 맡는다. 핸들러는 선택 상태와 지도 중심만 다룬다.
   const handleSelectStart = (place) => {
     setSelectedStart(place); setStartResult([]); setStartSearch(place.name)
-    if (mapInstance.current) {
-      clearMarkers()
-      const latlng = new window.kakao.maps.LatLng(place.lat, place.lng)
-      addMarker(latlng, '출발', START_COLOR); centerOnVisible(latlng)
-      if (selectedDest) addMarker(new window.kakao.maps.LatLng(selectedDest.lat, selectedDest.lng), '도착', DEST_COLOR)
-    }
+    if (mapInstance.current) centerOnVisible(new window.kakao.maps.LatLng(place.lat, place.lng))
   }
 
   const handleSelectDest = (place) => {
     setSelectedDest(place); setDestResult([]); setDestSearch(place.name)
-    if (mapInstance.current) {
-      clearMarkers()
-      if (selectedStart) addMarker(new window.kakao.maps.LatLng(selectedStart.lat, selectedStart.lng), '출발', START_COLOR)
-      const destLatlng = new window.kakao.maps.LatLng(place.lat, place.lng)
-      addMarker(destLatlng, '도착', DEST_COLOR); centerOnVisible(destLatlng)
-    }
+    if (mapInstance.current) centerOnVisible(new window.kakao.maps.LatLng(place.lat, place.lng))
   }
 
   // 상단 검색에서 장소를 고르면 출발/도착 선택 팝업을 띄운다
@@ -204,10 +238,14 @@ export default function RoutePage({ user, onLogout }) {
         fetch('/routes', {
           method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader },
           body: JSON.stringify({ startLatitude: selectedStart.lat + offset.dLat, startLongitude: selectedStart.lng + offset.dLng, endLatitude: selectedDest.lat, endLongitude: selectedDest.lng }),
-        }).then(r => r.json()).then(json => (json.success && json.data?.[0]) ? { ...json.data[0], routeId: idx + 1 } : null).catch(() => null)
+        }).then(readEnvelope).then(json => (json.success && json.data?.[0]) ? { ...json.data[0], routeId: idx + 1, failMessage: null } : { failMessage: json.message }).catch(() => ({ failMessage: '서버에 연결하지 못했습니다.' }))
       ))
-      const validRoutes = results.filter(Boolean)
-      if (validRoutes.length === 0) { alert('경로를 찾을 수 없습니다.'); return }
+      const validRoutes = results.filter(r => r.routeId)
+      if (validRoutes.length === 0) {
+        // 전부 실패했으면 첫 실패 사유를 그대로 보여준다 ('경로 없음'과 '권한 없음'은 다르다).
+        alert(results.find(r => r.failMessage)?.failMessage || '경로를 찾을 수 없습니다.')
+        return
+      }
       validRoutes.sort((a, b) => b.safetyScore - a.safetyScore)
       const labeled = validRoutes.map((r, idx) => ({ ...r, routeId: idx + 1, label: idx === 0 ? '추천' : `경로 ${idx + 1}` }))
       setRoutes(labeled); setSelectedRoute(labeled[0]); setIsSearched(true); drawRoute(labeled[0])
@@ -218,13 +256,11 @@ export default function RoutePage({ user, onLogout }) {
 
   const drawRoute = (route) => {
     if (!mapInstance.current || !route?.path) return
-    clearPolylines(); clearMarkers()
+    clearPolylines() // 마커는 건드리지 않는다 — 동기화 effect가 이미 출발/도착 하나씩 유지 중이다.
     const linePath = route.path.map(point => new window.kakao.maps.LatLng(point.latitude, point.longitude))
     if (linePath.length === 0) return
     const polyline = new window.kakao.maps.Polyline({ path: linePath, strokeWeight: 6, strokeColor: START_COLOR, strokeOpacity: 0.9, strokeStyle: 'solid' })
     polyline.setMap(mapInstance.current); polylinesRef.current.push(polyline)
-    if (selectedStart) addMarker(new window.kakao.maps.LatLng(selectedStart.lat, selectedStart.lng), '출발', START_COLOR)
-    if (selectedDest) addMarker(new window.kakao.maps.LatLng(selectedDest.lat, selectedDest.lng), '도착', DEST_COLOR)
     const bounds = new window.kakao.maps.LatLngBounds()
     linePath.forEach(latlng => bounds.extend(latlng))
     // 아래쪽 패딩만큼 비워두면 경로 전체가 시트에 가리지 않고 들어온다.
@@ -238,26 +274,22 @@ export default function RoutePage({ user, onLogout }) {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader },
         body: JSON.stringify({ routeName: `${selectedStart.name} → ${selectedDest.name}`, startLatitude: selectedStart.lat, startLongitude: selectedStart.lng, endLatitude: selectedDest.lat, endLongitude: selectedDest.lng, safetyScore: selectedRoute.safetyScore }),
       })
-      const json = await res.json()
+      const json = await readEnvelope(res)
       if (json.success) { alert('북마크에 저장되었습니다.'); fetchBookmarks() }
-    } catch (err) { alert('저장에 실패했습니다.') }
+      else alert(json.message || '저장에 실패했습니다.')
+    } catch { alert('저장에 실패했습니다.') }
   }
 
   const handleBookmarkDelete = async (id) => {
     if (!window.confirm('북마크를 삭제할까요?')) return
     try { await fetch(`/bookmarks/${id}`, { method: 'DELETE', headers: authHeader }); fetchBookmarks() }
-    catch (err) { alert('삭제에 실패했습니다.') }
+    catch { alert('삭제에 실패했습니다.') }
   }
 
   const handleBookmarkRoute = (bookmark) => {
     const start = { lat: bookmark.startLatitude, lng: bookmark.startLongitude, name: bookmark.routeName.split(' → ')[0] ?? '출발지' }
     const dest = { lat: bookmark.endLatitude, lng: bookmark.endLongitude, name: bookmark.routeName.split(' → ')[1] ?? '도착지' }
     setSelectedStart(start); setSelectedDest(dest); setStartSearch(start.name); setDestSearch(dest.name); setStartMode('search')
-    if (mapInstance.current) {
-      clearMarkers()
-      addMarker(new window.kakao.maps.LatLng(start.lat, start.lng), '출발', START_COLOR)
-      addMarker(new window.kakao.maps.LatLng(dest.lat, dest.lng), '도착', DEST_COLOR)
-    }
   }
 
   const scoreColor = (score) => (score >= 20 ? 'var(--safe)' : score >= 10 ? 'var(--warning)' : 'var(--danger)')
@@ -318,10 +350,26 @@ export default function RoutePage({ user, onLogout }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 11, padding: '11px 13px' }}>
                   <span style={{ width: 10, height: 10, borderRadius: '50%', background: currentLocation ? 'var(--safe)' : 'var(--warning)', flexShrink: 0 }} />
                   {currentLocation ? (
-                    <div>
-                      <div style={{ color: 'var(--safe)', fontSize: 13, fontWeight: 600 }}>현재 위치 확인됨</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 2, fontFamily: "'Inter',sans-serif" }}>{currentLocation.lat.toFixed(4)} · {currentLocation.lng.toFixed(4)}</div>
-                    </div>
+                    <>
+                      {/* minWidth:0 — 주소가 길어도 '수정' 버튼을 밀어내지 않게. */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ color: 'var(--safe)', fontSize: 13, fontWeight: 600 }}>현재 위치 확인됨</div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: 11.5, marginTop: 2 }}>
+                          {startAddress || `${currentLocation.lat.toFixed(4)} · ${currentLocation.lng.toFixed(4)}`}
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleEditStart}
+                        title="출발지 직접 지정"
+                        style={{
+                          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, height: 30, padding: '0 10px',
+                          border: '1px solid var(--border)', borderRadius: 9, background: 'var(--surface)',
+                          color: 'var(--blue-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                        }}
+                      >
+                        <Icon name="edit" size={13} /> 수정
+                      </button>
+                    </>
                   ) : <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>현재 위치를 가져오는 중...</div>}
                 </div>
               )}
@@ -388,11 +436,18 @@ export default function RoutePage({ user, onLogout }) {
                   )
                 })}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-                  <button onClick={() => { if (!selectedRoute) return; navigate('/', { state: { routeActive: true, routePath: selectedRoute.path, start: selectedStart, dest: selectedDest, safetyScore: selectedRoute.safetyScore } }) }}
+                  <button onClick={() => {
+                    if (!selectedRoute) return
+                    // 세션에 저장해 둬야 다른 화면에 갔다 와도 안내가 유지된다(취소는 지도 배너에서).
+                    saveActiveRoute({ routePath: selectedRoute.path, start: selectedStart, dest: selectedDest, safetyScore: selectedRoute.safetyScore })
+                    navigate('/')
+                  }}
                     style={{ width: '100%', height: 44, border: 'none', borderRadius: 11, background: 'var(--blue-primary)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}><Icon name="play" size={15} /> 지도에서 경로 보기</button>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={handleBookmarkSave} style={{ flex: 1, height: 42, border: '1px solid var(--blue-primary)', borderRadius: 11, background: 'var(--surface)', color: 'var(--blue-primary)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}><Icon name="star" size={15} /> 북마크 저장</button>
-                    <button onClick={() => { setIsSearched(false); setRoutes([]); setSelectedRoute(null); clearPolylines(); clearMarkers(); setSelectedStart(null); setSelectedDest(null); setStartSearch(''); setDestSearch(''); setStartMode('current') }}
+                    <button onClick={() => { setIsSearched(false); setRoutes([]); setSelectedRoute(null); clearPolylines(); setSelectedDest(null); setStartSearch(''); setDestSearch(''); setStartMode('current')
+                        // 이미 'current' 모드면 위치조회 effect가 다시 돌지 않으므로, 알고 있는 현재 위치를 직접 되살린다.
+                        setSelectedStart(currentLocation ? { ...currentLocation, name: startAddress || '현재 위치' } : null) }}
                       style={{ flex: 1, height: 42, border: '1px solid var(--border)', borderRadius: 11, background: 'var(--surface)', color: 'var(--text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}><Icon name="refresh" size={15} /> 다시 검색</button>
                   </div>
                 </div>

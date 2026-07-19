@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import AuthLayout, { AuthLogo, AuthField } from '../components/layout/AuthLayout'
+import { readEnvelope } from '../utils/apiResponse'
 
 export default function LoginPage({ onLogin, onGoRegister, modal = false, onClose }) {
   const [form, setForm] = useState({ usernameOrEmail: '', password: '' })
@@ -31,8 +32,8 @@ export default function LoginPage({ onLogin, onGoRegister, modal = false, onClos
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ usernameOrEmail: form.usernameOrEmail, password: form.password }),
       })
-      const json = await res.json()
-      if (!json.success) {
+      const json = await readEnvelope(res)
+      if (!json.success || !json.data) {
         setError(json.error?.message || json.message || '로그인에 실패했습니다.')
         return
       }

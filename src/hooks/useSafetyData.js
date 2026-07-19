@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { readEnvelope } from '../utils/apiResponse'
 
 const fetchDangerZones = async () => {
   try {
@@ -8,8 +9,9 @@ const fetchDangerZones = async () => {
     const res = await fetch('/danger-zones', {
       headers: { Authorization: `Bearer ${token}` }
     })
-    const json = await res.json()
-    return json.success ? json.data : []
+    const json = await readEnvelope(res)
+    if (!json.success) { console.warn('위험구역 조회 실패:', json.message); return [] }
+    return json.data ?? []
   } catch (err) {
     console.error('위험구역 조회 실패:', err)
     return []

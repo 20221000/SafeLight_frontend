@@ -14,14 +14,19 @@ import AdminUserPage from './pages/AdminUserPage'
 import AdminReportPage from './pages/AdminReportPage'
 import AdminDangerZonePage from './pages/AdminDangerZonePage'
 import AdminNoticePage from './pages/AdminNoticePage'
+import useIsMobile from './hooks/useIsMobile'
 import './App.css'
 
 function AppRoutes() {
   const navigate = useNavigate()
   const location = useLocation()
+  const isMobile = useIsMobile()
   // 모달 패턴: 로그인/회원가입으로 이동할 때 직전 페이지를 backgroundLocation 으로 넘기면
   // 그 페이지를 뒤에 남겨둔 채(블러) 위에 카드만 띄운다. state 가 없으면(직접 URL 진입) 전체 페이지.
-  const backgroundLocation = location.state?.backgroundLocation
+  // 모달은 데스크탑 전용이다. 모바일에서 이 값을 그대로 쓰면 뒤 페이지가 화면을 다 채운 뒤
+  // 로그인 카드가 그 아래(스크롤 밖)에 붙어 화면에 안 보인다 — 모바일은 항상 전체 페이지로 띄운다.
+  const bgState = location.state?.backgroundLocation
+  const backgroundLocation = isMobile ? undefined : bgState
 
   const [user, setUser] = useState(() => {
     try {
@@ -58,7 +63,7 @@ function AppRoutes() {
     navigate(userData.role === 'ADMIN' ? '/admin' : '/', { replace: true })
   }
   // 모달 닫기 — 뒤 배경 페이지로 돌아간다(모달로 열렸으면 뒤로가기, 아니면 홈).
-  const closeAuth = () => (backgroundLocation ? navigate(-1) : navigate('/'))
+  const closeAuth = () => (bgState ? navigate(-1) : navigate('/'))
 
   const loginEl = (asModal) => (
     <LoginPage

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import AdminShell from '../components/layout/AdminShell'
 import { adminStyles as s } from '../components/Admin/adminStyles'
 import { apiGet, apiSend } from '../utils/adminApi'
+import { readEnvelope } from '../utils/apiResponse'
 import useIsMobile from '../hooks/useIsMobile'
 import Icon from '../components/Icon'
 
@@ -65,7 +66,7 @@ export default function AdminNoticePage({ user, onLogout }) {
         formData.append('userId', user.userId)
         files.forEach(file => formData.append('files', file))
         const res = await fetch('/posts/with-files', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData })
-        const json = await res.json().catch(() => ({ success: false }))
+        const json = await readEnvelope(res)
         if (!json.success) throw new Error(json.message || '공지 등록에 실패했습니다.')
       } else {
         await apiSend('/posts/admin/notices', 'POST', {

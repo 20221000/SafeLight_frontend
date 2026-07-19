@@ -5,6 +5,7 @@ import useIsMobile from '../hooks/useIsMobile'
 import useAuthNav from '../hooks/useAuthNav'
 import Icon from '../components/Icon'
 import { POST_CATEGORY } from '../theme/tokens'
+import { readEnvelope } from '../utils/apiResponse'
 
 // 탭 라벨 → 백엔드 카테고리. '안전 신고'는 커뮤니티 신고글(REPORT), 원클릭 긴급신고와 무관.
 const CATEGORIES = ['전체', '공지', '정보', '질문', '안전 신고', '팁']
@@ -38,6 +39,7 @@ export default function CommunityPage({ user, onLogout }) {
   const [popularPosts, setPopularPosts] = useState([])
   const [stats] = useState({ todayPosts: null, totalMembers: null })
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('') // 조회 실패 사유 (403 등) — 빈 목록과 구분해서 보여준다
 
   const fetchPosts = async () => {
     setLoading(true)
@@ -53,8 +55,9 @@ export default function CommunityPage({ user, onLogout }) {
       const token = localStorage.getItem('accessToken')
       const headers = token ? { Authorization: `Bearer ${token}` } : {}
       const res = await fetch(url, { headers })
-      const json = await res.json()
-      if (!json.success) return
+      const json = await readEnvelope(res)
+      if (!json.success) { setError(json.message); setPosts([]); setNotices([]); setPageInfo(null); return }
+      setError('')
       if (activeCategory === '전체' && !searchKeyword) {
         setNotices(json.data.notices ?? [])
         setPosts(json.data.items ?? [])
@@ -66,6 +69,7 @@ export default function CommunityPage({ user, onLogout }) {
       }
     } catch (err) {
       console.error('게시글 조회 실패:', err)
+      setError('서버에 연결하지 못했습니다.')
     } finally {
       setLoading(false)
     }
@@ -206,6 +210,17 @@ export default function CommunityPage({ user, onLogout }) {
                   </div>
                 </div>
               ))
+            ) : error ? (
+              // 조회 실패는 '글이 없음'과 다르다 — 사유를 보여주고, 로그인 문제면 바로 갈 수 있게 한다.
+              <div style={{ textAlign: 'center', padding: '52px 0', color: 'var(--text-muted)' }}>
+                <Icon name="alert-triangle" size={22} color="var(--warning)" />
+                <div style={{ marginTop: 8, fontSize: 13.5 }}>{error}</div>
+                {!user && (
+                  <button onClick={goLogin} style={{ marginTop: 14, height: 38, padding: '0 18px', border: 'none', borderRadius: 10, background: 'var(--blue-primary)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    로그인하러 가기
+                  </button>
+                )}
+              </div>
             ) : (
               <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>게시글이 없습니다.</div>
             )}

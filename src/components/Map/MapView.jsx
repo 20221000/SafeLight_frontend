@@ -2,12 +2,16 @@ import { useEffect, useRef, useCallback } from 'react'
 import useIsMobile from '../../hooks/useIsMobile'
 import Icon from '../Icon'
 import { iconSvg } from '../iconSvg'
+import { readEnvelope } from '../../utils/apiResponse'
 
 async function fetchMarkerData() {
   try {
     const res = await fetch('/cctvs')
-    const json = await res.json()
-    if (!json.success) return { cctv: [], streetLamp: [], safeZone: [] }
+    const json = await readEnvelope(res)
+    if (!json.success || !json.data) {
+      console.warn('마커 데이터 조회 실패:', json.message)
+      return { cctv: [], streetLamp: [], safeZone: [] }
+    }
 
     const cctv = json.data.map(item => ({
       lat: item.latitude,
@@ -22,7 +26,7 @@ async function fetchMarkerData() {
   }
 }
 
-export default function MapView({ filters, onToggleFilter, dangerZones = [], routeState = null, searchTarget = null }) {
+export default function MapView({ filters, onToggleFilter, dangerZones = [], routeState = null, onCancelRoute, searchTarget = null }) {
   // 모바일에서는 레이어 칩을 데스크탑의 3/4 크기로 줄인다(34 → 26px).
   const isMobile = useIsMobile()
   const CHIP_H = isMobile ? 26 : 34
@@ -292,11 +296,17 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
     }
   }, [dangerZones, drawDangerZones])
 
-  // 경로 안내에서 넘어온 경우
+  // 경로 안내에서 넘어온 경우. 안내가 취소되면(routeState === null) 그려둔 선과 마커를 지운다.
   useEffect(() => {
-    if (routeState?.routePath && mapInstance.current) {
+    if (!mapInstance.current) return
+    if (routeState?.routePath) {
       drawRouteOnMap(routeState.routePath, routeState.start, routeState.dest)
+      return
     }
+    routePolylinesRef.current.forEach(p => p.setMap(null))
+    routePolylinesRef.current = []
+    routeMarkersRef.current.forEach(m => m.setMap(null))
+    routeMarkersRef.current = []
   }, [routeState, drawRouteOnMap])
 
   // 컨테이너 크기 변화(우측 패널 접기/펼치기, 창 리사이즈) 시 지도 다시 그리기
@@ -339,16 +349,32 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
 
       {/* 경로 안내 배너 — 모바일에서는 좌상단 레이어 칩과 같은 높이에 놓으면 겹치므로 칩 아래로 내린다 */}
       {routeState?.routeActive && (
-        <div style={{
-          position: 'absolute', top: isMobile ? 16 + CHIP_H + 10 : 16, left: '50%',
-          transform: 'translateX(-50%)', zIndex: 10,
-          background: 'var(--blue-primary)',
-          borderRadius: '20px', padding: isMobile ? '6px 13px' : '8px 18px',
-          color: '#fff', fontSize: isMobile ? 11.5 : 13, fontWeight: 700,
-          boxShadow: 'var(--shadow)', whiteSpace: 'nowrap',
-        }}>
-          <Icon name="compass" size={isMobile ? 13 : 15} /> 경로 안내 중 · CCTV {routeState.safetyScore}개 경유
-        </div>
+        // 배너를 누르면 안내를 취소할 수 있다(데스크탑·모바일 동일). 안내 중 나갈 방법이 이것뿐이라
+        // 눌러야 한다는 걸 알 수 있게 ✕ 를 함께 둔다.
+        <button
+          onClick={onCancelRoute}
+          title="경로 안내 취소"
+          aria-label="경로 안내 취소"
+          style={{
+            position: 'absolute', top: isMobile ? 16 + CHIP_H + 10 : 16, left: '50%',
+            transform: 'translateX(-50%)', zIndex: 10,
+            display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8,
+            background: 'var(--blue-primary)', border: 'none', cursor: 'pointer',
+            borderRadius: '20px', padding: isMobile ? '6px 11px 6px 13px' : '8px 14px 8px 18px',
+            color: '#fff', fontSize: isMobile ? 11.5 : 13, fontWeight: 700, fontFamily: 'inherit',
+            boxShadow: 'var(--shadow)', whiteSpace: 'nowrap',
+          }}
+        >
+          <Icon name="compass" size={isMobile ? 13 : 15} />
+          <span>경로 안내 중 · CCTV {routeState.safetyScore}개 경유</span>
+          <span style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: isMobile ? 17 : 19, height: isMobile ? 17 : 19, borderRadius: '50%',
+            background: 'rgba(255,255,255,.22)',
+          }}>
+            <Icon name="x" size={isMobile ? 11 : 12} strokeWidth={2.6} />
+          </span>
+        </button>
       )}
 
       {/* 레이어 칩 (좌상단) */}

@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import UserShell from '../components/layout/UserShell'
 import useIsMobile from '../hooks/useIsMobile'
 import useAuthNav from '../hooks/useAuthNav'
 import Icon from '../components/Icon'
 import { POST_CATEGORY } from '../theme/tokens'
+import { readEnvelope } from '../utils/apiResponse'
 
 function CategoryBadge({ category }) {
   const c = POST_CATEGORY[category] ?? POST_CATEGORY.INFO
@@ -84,28 +85,34 @@ export default function PostDetailPage({ user, onLogout }) {
   const [replyInputId, setReplyInputId] = useState(null)
   const [replyInput, setReplyInput] = useState('')
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('') // 조회 실패 사유 (403·404 등)
 
-  useEffect(() => { fetchPost() }, [postId])
-
-  const fetchPost = async () => {
+  // 선언을 effect보다 앞에 둔다 — effect에서 아직 선언 전인 const 를 참조하면 안 된다.
+  const fetchPost = useCallback(async () => {
     try {
       setLoading(true)
       const token = localStorage.getItem('accessToken')
       const headers = token ? { Authorization: `Bearer ${token}` } : {}
       const res = await fetch(`/posts/${postId}`, { headers })
-      const json = await res.json()
-      if (json.success) {
+      const json = await readEnvelope(res)
+      if (json.success && json.data) {
+        setError('')
         setPost(json.data)
         setComments(json.data.comments ?? [])
         setIsLiked(json.data.isLiked ?? false)
         setLikeCount(json.data.likeCount ?? 0)
+      } else {
+        setError(json.message || '게시글을 불러오지 못했습니다.')
       }
     } catch (err) {
       console.error('게시글 조회 실패:', err)
+      setError('서버에 연결하지 못했습니다.')
     } finally {
       setLoading(false)
     }
-  }
+  }, [postId])
+
+  useEffect(() => { fetchPost() }, [fetchPost])
 
   const handleLike = async () => {
     if (!user) { alert('로그인이 필요합니다.'); goLogin(); return }
@@ -128,8 +135,9 @@ export default function PostDetailPage({ user, onLogout }) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ content: commentInput, parentId: null, userId: user.userId }),
     })
-    const json = await res.json()
+    const json = await readEnvelope(res)
     if (json.success) { setCommentInput(''); fetchPost() }
+    else alert(json.message || '댓글 등록에 실패했습니다.')
   }
 
   const handleReplySubmit = async (parentId) => {
@@ -141,24 +149,27 @@ export default function PostDetailPage({ user, onLogout }) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ content: replyInput, parentId, userId: user.userId }),
     })
-    const json = await res.json()
+    const json = await readEnvelope(res)
     if (json.success) { setReplyInput(''); setReplyInputId(null); fetchPost() }
+    else alert(json.message || '답글 등록에 실패했습니다.')
   }
 
   const handleCommentDelete = async (commentId) => {
     if (!window.confirm('댓글을 삭제할까요?')) return
     const token = localStorage.getItem('accessToken')
     const res = await fetch(`/posts/${postId}/comments/${commentId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
-    const json = await res.json()
+    const json = await readEnvelope(res)
     if (json.success) fetchPost()
+    else alert(json.message || '댓글 삭제에 실패했습니다.')
   }
 
   const handlePostDelete = async () => {
     if (!window.confirm('게시글을 삭제할까요?')) return
     const token = localStorage.getItem('accessToken')
     const res = await fetch(`/posts/${postId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
-    const json = await res.json()
+    const json = await readEnvelope(res)
     if (json.success) navigate('/community')
+    else alert(json.message || '게시글 삭제에 실패했습니다.')
   }
 
   const downloadAttachment = async (e, file) => {
@@ -189,7 +200,16 @@ export default function PostDetailPage({ user, onLogout }) {
         {loading ? (
           <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>불러오는 중...</div>
         ) : !post ? (
-          <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)' }}>게시글을 찾을 수 없습니다.</div>
+          // 실패 사유를 알면 그걸 보여준다 — '못 찾음'과 '권한 없음'은 사용자가 할 일이 다르다.
+          <div style={{ textAlign: 'center', padding: '52px 0', color: 'var(--text-muted)' }}>
+            <Icon name="alert-triangle" size={22} color="var(--warning)" />
+            <div style={{ marginTop: 8, fontSize: 13.5 }}>{error || '게시글을 찾을 수 없습니다.'}</div>
+            {!user && (
+              <button onClick={goLogin} style={{ marginTop: 14, height: 38, padding: '0 18px', border: 'none', borderRadius: 10, background: 'var(--blue-primary)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                로그인하러 가기
+              </button>
+            )}
+          </div>
         ) : (
           <div style={{
             background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 28,

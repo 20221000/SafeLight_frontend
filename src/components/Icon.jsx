@@ -31,6 +31,7 @@ const PATHS = {
   'inbox': <><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z" /></>,
   'clock': <><circle cx="12" cy="12" r="9.5" /><path d="M12 7v5l3.5 2" /></>,
   'play': <path d="M7 5v14l11-7z" />,
+  'edit': <><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5" /><path d="M18.4 2.6a2 2 0 0 1 2.8 2.8L12.5 14 9 15l1-3.5z" /></>,
 }
 
 export default function Icon({ name, size = 18, color = 'currentColor', strokeWidth = 1.9, style, ...rest }) {

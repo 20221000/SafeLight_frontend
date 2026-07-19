@@ -1,4 +1,4 @@
-// Light Safe 유저 상단 글로벌 바 (60px) — 로고 · (중앙)검색 · 현재위치 · 알림 · 야간모드 · 프로필
+// Light Safe 유저 상단 글로벌 바 (60px) — 로고 · (중앙)검색 · 현재위치 · 야간모드 · 프로필
 // 검색/현재위치는 PlaceSearchBox가 담당한다(모바일 헤더와 공유).
 import { useNavigate } from 'react-router-dom'
 import PlaceSearchBox from './PlaceSearchBox'
@@ -44,16 +44,8 @@ export default function TopBar({ user, dark, onToggleDark, onPickPlace }) {
         <PlaceSearchBox onPickPlace={onPickPlace} />
       </div>
 
-      {/* 알림 · 야간모드 · 프로필 (우측) */}
+      {/* 야간모드 · 프로필 (우측) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
-        <button style={{
-          position: 'relative', width: 40, height: 40, borderRadius: 11, border: '1px solid var(--border)',
-          background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          cursor: 'pointer', color: 'var(--text-muted)',
-        }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
-          <span style={{ position: 'absolute', top: 8, right: 9, width: 7, height: 7, borderRadius: '50%', background: 'var(--danger)', border: '1.5px solid var(--surface)' }} />
-        </button>
         <button
           onClick={onToggleDark}
           title="야간 모드"
