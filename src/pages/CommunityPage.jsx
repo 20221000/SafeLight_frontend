@@ -41,7 +41,6 @@ export default function CommunityPage({ user, onLogout }) {
   const [stats] = useState({ todayPosts: null, totalMembers: null })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('') // 조회 실패 사유 (403 등) — 빈 목록과 구분해서 보여준다
-  const [noticesExpanded, setNoticesExpanded] = useState(false) // 공지 3개↑ 접기/펼치기
 
   // 모바일은 한 페이지 5개 → 5개를 넘으면 페이지 버튼(1,2,3,4)이 생긴다. 데스크탑은 넓으니 10개 유지.
   const pageSize = isMobile ? 5 : 10
@@ -190,10 +189,11 @@ export default function CommunityPage({ user, onLogout }) {
             })}
           </div>
 
-          {/* 공지 — 3개 이상이면 최신 2개만 보이고, v버튼을 눌러야 이전 공지가 펼쳐진다 */}
+          {/* 공지 — 최신 3개까지만 노출한다(백엔드 getCommunity 도 findTop3...로 3개만 내려주는 의도된 동작).
+              데스크탑·모바일 동일. */}
           {notices.length > 0 && (
             <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {(noticesExpanded ? notices : notices.slice(0, 2)).map(notice => (
+              {notices.slice(0, 3).map(notice => (
                 <div
                   key={notice.postId}
                   onClick={() => handlePostClick(notice.postId)}
@@ -208,22 +208,6 @@ export default function CommunityPage({ user, onLogout }) {
                   <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}><Icon name="eye" size={13} /> {notice.viewCount}</span>
                 </div>
               ))}
-              {notices.length > 2 && (
-                <button
-                  onClick={() => setNoticesExpanded(v => !v)}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                    height: 38, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--surface)',
-                    color: 'var(--text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
-                  }}
-                >
-                  {noticesExpanded ? '공지 접기' : `이전 공지 ${notices.length - 2}개 더보기`}
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
-                    style={{ transform: noticesExpanded ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>
-                    <path d="M6 9l6 6 6-6" />
-                  </svg>
-                </button>
-              )}
             </div>
           )}
 

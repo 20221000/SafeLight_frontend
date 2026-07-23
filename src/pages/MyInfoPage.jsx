@@ -74,16 +74,19 @@ export default function MyInfoPage({ user, onLogout, onUpdateUser }) {
   // 내 활동: GET /users/my/posts(내가 쓴 글) + GET /users/my/reports(내 신고 내역)
   const [myPosts, setMyPosts] = useState([])
   const [myReports, setMyReports] = useState([])
+  // 안 읽은 쪽지 개수: GET /messages/unread-count → { unreadCount }
+  const [unreadMessages, setUnreadMessages] = useState(0)
 
   useEffect(() => {
     if (!user) return
     let alive = true
     ;(async () => {
-      const [fake, black, posts, reports] = await Promise.all([
+      const [fake, black, posts, reports, unread] = await Promise.all([
         apiGet('/users/fake').catch(() => null),
         apiGet('/users/black').catch(() => null),
         apiGet('/users/my/posts').catch(() => []),
         apiGet('/users/my/reports').catch(() => []),
+        apiGet('/messages/unread-count').catch(() => null),
       ])
       if (!alive) return
       setReportStats({
@@ -92,6 +95,7 @@ export default function MyInfoPage({ user, onLogout, onUpdateUser }) {
       })
       setMyPosts(Array.isArray(posts) ? posts : [])
       setMyReports(Array.isArray(reports) ? reports : [])
+      setUnreadMessages(unread?.unreadCount ?? 0)
     })()
     return () => { alive = false }
   }, [user])
@@ -209,6 +213,27 @@ export default function MyInfoPage({ user, onLogout, onUpdateUser }) {
             height: 44, padding: '0 20px', border: '1px solid var(--border)', borderRadius: 11, background: 'var(--surface)',
             color: 'var(--text-strong)', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
           }}>비밀번호 변경</button>
+        </Card>
+
+        {/* 쪽지함 — 친구끼리 주고받는 쪽지 (백엔드가 친구에게만 발송을 허용한다) */}
+        <Card title="쪽지" desc="친구와 주고받은 쪽지를 확인합니다.">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, cursor: 'pointer' }} onClick={() => navigate('/myinfo/messages')}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span style={{ fontSize: 14, fontWeight: 600 }}>쪽지함</span>
+                {unreadMessages > 0 && (
+                  <span style={{
+                    fontFamily: "'Inter',sans-serif", background: 'var(--danger)', color: '#fff', fontSize: 11, fontWeight: 700,
+                    minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  }}>{unreadMessages}</span>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                {unreadMessages > 0 ? `읽지 않은 쪽지가 ${unreadMessages}개 있습니다.` : '읽지 않은 쪽지가 없습니다.'}
+              </div>
+            </div>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+          </div>
         </Card>
 
         {/* 안전 설정 */}

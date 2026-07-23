@@ -9,6 +9,7 @@ export default defineConfig({
     proxy: {
       '/users': 'http://localhost:8080',
       '/friends': 'http://localhost:8080',
+      '/messages': 'http://localhost:8080',
       '/posts': 'http://localhost:8080',
       '/cctvs': 'http://localhost:8080',
       '/danger-zones': 'http://localhost:8080',

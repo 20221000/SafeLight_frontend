@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import UserShell from '../components/layout/UserShell'
 import useIsMobile from '../hooks/useIsMobile'
 import { apiGet, apiSend } from '../utils/adminApi'
@@ -26,6 +27,7 @@ function Avatar({ name }) {
 
 export default function FriendsPage({ user, onLogout }) {
   const isMobile = useIsMobile() // 모바일: 페이지 여백 축소(데스크탑 48/30px는 375px에서 너무 넓다)
+  const navigate = useNavigate()
   const [tab, setTab] = useState('친구 목록')
   const [search, setSearch] = useState('')
 
@@ -152,6 +154,18 @@ export default function FriendsPage({ user, onLogout }) {
                   </div>
                   <span style={{ fontSize: 11.5, color: f.isEmergencyAllowed ? 'var(--blue-primary)' : 'var(--text-muted)', fontWeight: 600 }}>긴급공유 {f.isEmergencyAllowed ? 'ON' : 'OFF'}</span>
                   <Toggle checked={f.isEmergencyAllowed} onChange={() => toggleEmergency(f.friendsId)} />
+                  {/* 쪽지 쓰기 — 쪽지함으로 이동하며 받는 사람을 미리 지정한다.
+                      모바일은 행이 좁아 아이콘만 남긴다. */}
+                  <button
+                    title={`${f.friendNickname} 님에게 쪽지`}
+                    onClick={() => navigate('/myinfo/messages', { state: { to: f.friendUserId } })}
+                    style={isMobile
+                      ? { width: 36, height: 36, flexShrink: 0, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }
+                      : { ...btnGhost, display: 'flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v12H5.2L4 17.5z" /></svg>
+                    {!isMobile && '쪽지'}
+                  </button>
                   <button style={btnGhost} onClick={() => removeFriend(f.friendUserId, f.friendNickname)}>삭제</button>
                 </Row>
               ))
