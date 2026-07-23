@@ -36,21 +36,26 @@ export default function CommunityPage({ user, onLogout }) {
   const [posts, setPosts] = useState([])
   const [notices, setNotices] = useState([])
   const [pageInfo, setPageInfo] = useState(null)
-  const [popularPosts, setPopularPosts] = useState([])
+  // GET /posts/summary → 카테고리별 최신글 { notices, questions, info }. (인기순 API는 백엔드에 없음)
+  const [summary, setSummary] = useState({ notices: [], questions: [], info: [] })
   const [stats] = useState({ todayPosts: null, totalMembers: null })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('') // 조회 실패 사유 (403 등) — 빈 목록과 구분해서 보여준다
+  const [noticesExpanded, setNoticesExpanded] = useState(false) // 공지 3개↑ 접기/펼치기
+
+  // 모바일은 한 페이지 5개 → 5개를 넘으면 페이지 버튼(1,2,3,4)이 생긴다. 데스크탑은 넓으니 10개 유지.
+  const pageSize = isMobile ? 5 : 10
 
   const fetchPosts = async () => {
     setLoading(true)
     try {
       let url = ''
       if (searchKeyword) {
-        url = `/posts/search?keyword=${encodeURIComponent(searchKeyword)}&page=${currentPage}&size=10&sort=latest`
+        url = `/posts/search?keyword=${encodeURIComponent(searchKeyword)}&page=${currentPage}&size=${pageSize}&sort=latest`
       } else if (activeCategory === '전체') {
-        url = `/posts/community?page=${currentPage}&size=10`
+        url = `/posts/community?page=${currentPage}&size=${pageSize}`
       } else {
-        url = `/posts?category=${CATEGORY_MAP[activeCategory]}&page=${currentPage}&size=10&sort=latest`
+        url = `/posts?category=${CATEGORY_MAP[activeCategory]}&page=${currentPage}&size=${pageSize}&sort=latest`
       }
       const token = localStorage.getItem('accessToken')
       const headers = token ? { Authorization: `Bearer ${token}` } : {}
@@ -75,7 +80,27 @@ export default function CommunityPage({ user, onLogout }) {
     }
   }
 
-  useEffect(() => { fetchPosts() }, [activeCategory, currentPage, searchKeyword])
+  useEffect(() => { fetchPosts() }, [activeCategory, currentPage, searchKeyword, pageSize])
+
+  // 사이드바 카테고리별 최신글 — 목록과 독립적으로 최초 1회만 조회
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const token = localStorage.getItem('accessToken')
+        const headers = token ? { Authorization: `Bearer ${token}` } : {}
+        const res = await fetch('/posts/summary', { headers })
+        const json = await readEnvelope(res)
+        if (!alive || !json.success || !json.data) return
+        setSummary({
+          notices: json.data.notices ?? [],
+          questions: json.data.questions ?? [],
+          info: json.data.info ?? [],
+        })
+      } catch { /* 사이드바는 부가 정보 — 실패해도 본문에 영향 없음 */ }
+    })()
+    return () => { alive = false }
+  }, [])
 
   const handleSearch = () => { setSearchKeyword(searchInput); setCurrentPage(0) }
   const handleCategoryChange = (cat) => { setActiveCategory(cat); setCurrentPage(0); setSearchKeyword(''); setSearchInput('') }
@@ -165,10 +190,10 @@ export default function CommunityPage({ user, onLogout }) {
             })}
           </div>
 
-          {/* 공지 */}
+          {/* 공지 — 3개 이상이면 최신 2개만 보이고, v버튼을 눌러야 이전 공지가 펼쳐진다 */}
           {notices.length > 0 && (
             <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {notices.map(notice => (
+              {(noticesExpanded ? notices : notices.slice(0, 2)).map(notice => (
                 <div
                   key={notice.postId}
                   onClick={() => handlePostClick(notice.postId)}
@@ -183,6 +208,22 @@ export default function CommunityPage({ user, onLogout }) {
                   <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}><Icon name="eye" size={13} /> {notice.viewCount}</span>
                 </div>
               ))}
+              {notices.length > 2 && (
+                <button
+                  onClick={() => setNoticesExpanded(v => !v)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    height: 38, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--surface)',
+                    color: 'var(--text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  {noticesExpanded ? '공지 접기' : `이전 공지 ${notices.length - 2}개 더보기`}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+                    style={{ transform: noticesExpanded ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </button>
+              )}
             </div>
           )}
 
@@ -238,20 +279,34 @@ export default function CommunityPage({ user, onLogout }) {
           )}
         </div>
 
-        {/* 우측 컬럼 */}
-        <aside style={{ width: isMobile ? '100%' : 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* 우측 컬럼 — 모바일에서는 피드 아래로 내려오므로, 얇은 가로선으로 게시글 영역과 구분한다.
+            데스크탑은 별도 우측 컬럼이라 구분선이 필요 없다. */}
+        <aside style={{
+          width: isMobile ? '100%' : 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 14,
+          ...(isMobile ? { borderTop: '1px solid var(--border)', paddingTop: 18, marginTop: 4 } : {}),
+        }}>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 18 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}><Icon name="flame" size={15} color="var(--blue-primary)" /> 인기 게시글</div>
-            {popularPosts.length > 0 ? popularPosts.map((post, idx) => (
-              <div key={post.postId} onClick={() => handlePostClick(post.postId)} style={{ display: 'flex', gap: 10, marginBottom: 12, cursor: 'pointer' }}>
-                <span style={{ width: 22, height: 22, borderRadius: 7, background: 'var(--blue-tint)', color: 'var(--blue-primary)', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: "'Inter',sans-serif" }}>{idx + 1}</span>
-                {/* minWidth:0 — 긴 제목이 칸을 넘치지 않게. */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, marginBottom: 4, lineHeight: 1.4, wordBreak: 'break-word' }}>{post.title}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}><Icon name="heart" size={12} /> {post.likeCount}</div>
-                </div>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}><Icon name="flame" size={15} color="var(--blue-primary)" /> 카테고리별 최신글</div>
+            {(summary.notices.length + summary.questions.length + summary.info.length) > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {[
+                  { key: 'notices', label: '공지', cat: 'NOTICE', items: summary.notices },
+                  { key: 'questions', label: '질문', cat: 'QUESTION', items: summary.questions },
+                  { key: 'info', label: '정보', cat: 'INFO', items: summary.info },
+                ].filter(g => g.items.length > 0).map(g => (
+                  <div key={g.key}>
+                    <div style={{ marginBottom: 8 }}><CategoryBadge category={g.cat} /></div>
+                    {g.items.slice(0, 4).map(post => (
+                      <div key={post.postId} onClick={() => handlePostClick(post.postId)} style={{ display: 'flex', gap: 8, marginBottom: 9, cursor: 'pointer', alignItems: 'baseline' }}>
+                        {/* minWidth:0 — 긴 제목이 칸을 넘치지 않게. */}
+                        <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{post.title}</div>
+                        <div style={{ flexShrink: 0, fontSize: 11, color: 'var(--text-muted)' }}><Icon name="eye" size={11} /> {post.viewCount}</div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
               </div>
-            )) : <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>데이터 준비 중입니다.</div>}
+            ) : <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>데이터 준비 중입니다.</div>}
           </div>
 
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 18 }}>

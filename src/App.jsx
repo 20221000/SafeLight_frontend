@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import MainPage from './pages/MainPage'
 import LoginPage from './pages/LoginPage'
@@ -15,6 +15,7 @@ import AdminReportPage from './pages/AdminReportPage'
 import AdminDangerZonePage from './pages/AdminDangerZonePage'
 import AdminNoticePage from './pages/AdminNoticePage'
 import useIsMobile from './hooks/useIsMobile'
+import { apiSend } from './utils/adminApi'
 import './App.css'
 
 function AppRoutes() {
@@ -42,11 +43,38 @@ function AppRoutes() {
     localStorage.setItem('user', JSON.stringify(userData))
   }
 
-  const handleLogout = () => {
+  // 로컬 세션만 정리 (토큰 만료 감지 등 서버 통보가 불필요/불가능한 경우)
+  const clearSession = () => {
     setUser(null)
     localStorage.removeItem('user')
     localStorage.removeItem('accessToken')
   }
+
+  const handleLogout = () => {
+    // 서버에도 로그아웃을 통보한다. 실패해도(네트워크·이미 만료 등) 로컬 정리는 진행.
+    apiSend('/users/logout', 'POST').catch(() => {})
+    clearSession()
+    // 로그아웃 후에는 이전 로그인 정보가 남은 화면(내 정보·관리자)에 머물지 않도록
+    // 항상 지도(홈)로 이동시킨다. replace 로 뒤로가기 시 보호 페이지로 못 돌아오게 한다.
+    navigate('/', { replace: true })
+  }
+
+  // 앱 진입 시 저장된 토큰이 아직 유효한지 한 번 확인한다.
+  // 401/403(명시적 인증 거부)일 때만 조용히 로그아웃 — 서버 다운/네트워크 오류로는 로그아웃하지 않는다.
+  useEffect(() => {
+    const token = localStorage.getItem('accessToken')
+    if (!token || !user) return
+    ;(async () => {
+      try {
+        const res = await fetch('/users/auth-check', { headers: { Authorization: `Bearer ${token}` } })
+        if (res.status === 401 || res.status === 403) clearSession()
+      } catch {
+        /* 네트워크 오류: 토큰 무효 판단 불가 → 세션 유지 */
+      }
+    })()
+    // 최초 1회만 검사한다 (user 변화마다 재검사할 필요 없음)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // 프로필 일부 변경 시 앱 상태 + localStorage 동기화 (상단바/아바타 즉시 반영)
   const handleUpdateUser = (patch) => {
@@ -91,6 +119,7 @@ function AppRoutes() {
         <Route path="/route" element={<RoutePage user={user} onLogout={handleLogout} />} />
         <Route path="/community" element={<CommunityPage user={user} onLogout={handleLogout} />} />
         <Route path="/community/write" element={<PostWritePage user={user} onLogout={handleLogout} />} />
+        <Route path="/community/:postId/edit" element={<PostWritePage user={user} onLogout={handleLogout} />} />
         <Route path="/community/:postId" element={<PostDetailPage user={user} onLogout={handleLogout} />} />
         <Route path="/myinfo" element={<MyInfoPage user={user} onLogout={handleLogout} onUpdateUser={handleUpdateUser} />} />
         <Route path="/myinfo/friends" element={<FriendsPage user={user} onLogout={handleLogout} />} />

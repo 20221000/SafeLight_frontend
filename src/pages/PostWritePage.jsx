@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import UserShell from '../components/layout/UserShell'
 import useIsMobile from '../hooks/useIsMobile'
 import useAuthNav from '../hooks/useAuthNav'
@@ -14,6 +14,8 @@ export default function PostWritePage({ user, onLogout }) {
   const isMobile = useIsMobile() // 모바일: 페이지 여백 축소(데스크탑 48/30px는 375px에서 너무 넓다)
   const navigate = useNavigate()
   const { goLogin } = useAuthNav()
+  const { postId } = useParams()      // 있으면 수정 모드
+  const isEdit = !!postId
   const fileInputRef = useRef(null)
 
   const [category, setCategory] = useState('INFO')
@@ -26,6 +28,26 @@ export default function PostWritePage({ user, onLogout }) {
   useEffect(() => {
     if (!user) { alert('로그인이 필요합니다.'); goLogin() }
   }, [user])
+
+  // 수정 모드: 기존 글을 불러와 채운다. 본인 글이 아니면 되돌린다(백엔드도 본인만 수정 허용).
+  useEffect(() => {
+    if (!isEdit || !user) return
+    let alive = true
+    ;(async () => {
+      const token = localStorage.getItem('accessToken')
+      const headers = token ? { Authorization: `Bearer ${token}` } : {}
+      const res = await fetch(`/posts/${postId}`, { headers })
+      const json = await readEnvelope(res)
+      if (!alive) return
+      if (!json.success || !json.data) { alert(json.message || '게시글을 불러오지 못했습니다.'); navigate('/community'); return }
+      const p = json.data
+      if (p.userId !== user.userId) { alert('본인 게시글만 수정할 수 있습니다.'); navigate(`/community/${postId}`); return }
+      setTitle(p.title ?? '')
+      setContent(p.content ?? '')
+      if (CATEGORIES.includes(p.category)) setCategory(p.category)
+    })()
+    return () => { alive = false }
+  }, [isEdit, postId, user])
 
   const handleFileChange = (e) => setFiles(prev => [...prev, ...Array.from(e.target.files)])
   const handleDrop = (e) => {
@@ -40,6 +62,18 @@ export default function PostWritePage({ user, onLogout }) {
     setLoading(true)
     const token = localStorage.getItem('accessToken')
     try {
+      // 수정 모드: PUT /posts/{postId} — 제목·내용·카테고리만. 첨부는 상세 화면에서 개별 관리.
+      if (isEdit) {
+        const res = await fetch(`/posts/${postId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ title, content, category }),
+        })
+        const json = await readEnvelope(res)
+        if (!json.success) { alert(json.message || '게시글 수정에 실패했습니다.'); return }
+        navigate(`/community/${postId}`)
+        return
+      }
       if (files.length > 0) {
         const formData = new FormData()
         formData.append('title', title)
@@ -73,10 +107,10 @@ export default function PostWritePage({ user, onLogout }) {
         {/* 뒤로가기를 제목 위에 두는 흔한 형태. 한 줄에 나란히 두면 제목이 버튼에 딸린 것처럼 보인다.
             padding:0 으로 버튼 기본 여백을 없애야 아래 제목과 왼쪽 선이 맞는다. */}
         <div style={{ marginBottom: 20 }}>
-          <button onClick={() => navigate('/community')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: 0, border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>목록으로
+          <button onClick={() => navigate(isEdit ? `/community/${postId}` : '/community')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: 0, border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>{isEdit ? '게시글로' : '목록으로'}
           </button>
-          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.4px', marginTop: 8 }}>게시글 작성</div>
+          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.4px', marginTop: 8 }}>{isEdit ? '게시글 수정' : '게시글 작성'}</div>
         </div>
 
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 26 }}>
@@ -119,7 +153,13 @@ export default function PostWritePage({ user, onLogout }) {
             </div>
           </div>
 
-          {/* 첨부파일 */}
+          {/* 첨부파일 — 수정 모드에서는 숨긴다. PUT /posts/{postId} 는 파일을 다루지 않으며,
+              기존 첨부는 게시글 상세 화면에서 개별 삭제로 관리한다. */}
+          {isEdit ? (
+            <div style={{ fontSize: 12.5, color: 'var(--text-muted)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' }}>
+              첨부파일은 게시글 상세 화면에서 개별 삭제로 관리합니다.
+            </div>
+          ) : (
           <div>
             <label style={labelStyle}>첨부파일</label>
             <div
@@ -149,11 +189,12 @@ export default function PostWritePage({ user, onLogout }) {
               </div>
             )}
           </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-          <button onClick={() => navigate('/community')} style={{ height: 46, padding: '0 24px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>취소</button>
-          <button onClick={handleSubmit} disabled={loading} style={{ height: 46, padding: '0 32px', borderRadius: 12, border: 'none', background: 'var(--blue-primary)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? .7 : 1, fontFamily: 'inherit' }}>{loading ? '등록 중...' : '등록하기'}</button>
+          <button onClick={() => navigate(isEdit ? `/community/${postId}` : '/community')} style={{ height: 46, padding: '0 24px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>취소</button>
+          <button onClick={handleSubmit} disabled={loading} style={{ height: 46, padding: '0 32px', borderRadius: 12, border: 'none', background: 'var(--blue-primary)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? .7 : 1, fontFamily: 'inherit' }}>{loading ? (isEdit ? '수정 중...' : '등록 중...') : (isEdit ? '수정하기' : '등록하기')}</button>
         </div>
       </div>
     </UserShell>

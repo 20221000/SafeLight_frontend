@@ -71,6 +71,32 @@ function CommentComposer({ value, onChange, onSubmit, placeholder, isMobile }) {
   )
 }
 
+// 댓글/답글 인라인 수정 편집기 (수정 클릭 시 본문 자리를 대체)
+function InlineCommentEditor({ value, onChange, onSave, onCancel }) {
+  return (
+    <div style={{ marginTop: 4 }}>
+      <textarea
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        rows={2}
+        autoFocus
+        style={{
+          width: '100%', boxSizing: 'border-box', padding: '10px 12px',
+          background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10,
+          fontSize: 14, color: 'var(--text-strong)', outline: 'none', fontFamily: 'inherit',
+          resize: 'vertical', lineHeight: 1.6,
+        }}
+      />
+      <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+        <button onClick={onSave} style={{ height: 34, padding: '0 14px', border: 'none', borderRadius: 9, background: 'var(--blue-primary)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>저장</button>
+        <button onClick={onCancel} style={{ height: 34, padding: '0 14px', border: '1px solid var(--border)', borderRadius: 9, background: 'var(--surface)', color: 'var(--text-muted)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>취소</button>
+      </div>
+    </div>
+  )
+}
+
+const commentActionBtn = (color) => ({ border: 'none', background: 'transparent', color, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' })
+
 export default function PostDetailPage({ user, onLogout }) {
   const isMobile = useIsMobile() // 모바일: 페이지 여백 축소(데스크탑 48/30px는 375px에서 너무 넓다)
   const navigate = useNavigate()
@@ -84,6 +110,8 @@ export default function PostDetailPage({ user, onLogout }) {
   const [commentInput, setCommentInput] = useState('')
   const [replyInputId, setReplyInputId] = useState(null)
   const [replyInput, setReplyInput] = useState('')
+  const [editingId, setEditingId] = useState(null)   // 수정 중인 댓글/답글 id (댓글·답글 공용)
+  const [editingContent, setEditingContent] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('') // 조회 실패 사유 (403·404 등)
 
@@ -163,6 +191,33 @@ export default function PostDetailPage({ user, onLogout }) {
     else alert(json.message || '댓글 삭제에 실패했습니다.')
   }
 
+  const startEdit = (comment) => { setEditingId(comment.commentId); setEditingContent(comment.content ?? '') }
+  const cancelEdit = () => { setEditingId(null); setEditingContent('') }
+
+  // PUT /posts/{postId}/comments/{commentId} — body: { content }
+  const handleCommentEdit = async (commentId) => {
+    if (!editingContent.trim()) return
+    const token = localStorage.getItem('accessToken')
+    const res = await fetch(`/posts/${postId}/comments/${commentId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ content: editingContent }),
+    })
+    const json = await readEnvelope(res)
+    if (json.success) { cancelEdit(); fetchPost() }
+    else alert(json.message || '댓글 수정에 실패했습니다.')
+  }
+
+  // DELETE /posts/attachments/{attachmentId} — 게시글 작성자만 노출
+  const handleAttachmentDelete = async (attachmentId) => {
+    if (!window.confirm('첨부파일을 삭제할까요?')) return
+    const token = localStorage.getItem('accessToken')
+    const res = await fetch(`/posts/attachments/${attachmentId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+    const json = await readEnvelope(res)
+    if (json.success) fetchPost()
+    else alert(json.message || '첨부파일 삭제에 실패했습니다.')
+  }
+
   const handlePostDelete = async () => {
     if (!window.confirm('게시글을 삭제할까요?')) return
     const token = localStorage.getItem('accessToken')
@@ -193,7 +248,10 @@ export default function PostDetailPage({ user, onLogout }) {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>목록으로
           </button>
           {user && post && user.userId === post.userId && (
-            <button onClick={handlePostDelete} style={{ height: 36, padding: '0 14px', border: '1px solid var(--danger)', borderRadius: 10, background: 'var(--surface)', color: 'var(--danger)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>삭제</button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => navigate(`/community/${postId}/edit`)} style={{ height: 36, padding: '0 14px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)', color: 'var(--text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>수정</button>
+              <button onClick={handlePostDelete} style={{ height: 36, padding: '0 14px', border: '1px solid var(--danger)', borderRadius: 10, background: 'var(--surface)', color: 'var(--danger)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>삭제</button>
+            </div>
           )}
         </div>
 
@@ -237,11 +295,20 @@ export default function PostDetailPage({ user, onLogout }) {
               <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
                 <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}><Icon name="paperclip" size={15} color="var(--blue-primary)" /> 첨부파일</div>
                 {post.attachments.map(file => (
-                  <a key={file.attachmentId} href={`/posts/attachments/${file.attachmentId}`} download={file.originalFilename} onClick={e => downloadAttachment(e, file)}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', marginBottom: 6, fontSize: 13, color: 'var(--text-muted)' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Icon name="file" size={14} /> {file.originalFilename}</span>
-                    <span style={{ fontSize: 11 }}>{file.size ? `${(file.size / 1024).toFixed(1)}KB` : ''}</span>
-                  </a>
+                  <div key={file.attachmentId} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    {/* 다운로드 링크 — 삭제 버튼은 이 <a> 밖 형제로 둔다(안에 넣으면 삭제 클릭이 다운로드까지 유발). */}
+                    <a href={`/posts/attachments/${file.attachmentId}`} download={file.originalFilename} onClick={e => downloadAttachment(e, file)}
+                      style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'var(--text-muted)' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}><Icon name="file" size={14} /> <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.originalFilename}</span></span>
+                      <span style={{ fontSize: 11, flexShrink: 0, marginLeft: 8 }}>{file.size ? `${(file.size / 1024).toFixed(1)}KB` : ''}</span>
+                    </a>
+                    {user && user.userId === post.userId && (
+                      <button onClick={() => handleAttachmentDelete(file.attachmentId)} title="첨부파일 삭제" aria-label="첨부파일 삭제"
+                        style={{ flexShrink: 0, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)', color: 'var(--danger)', cursor: 'pointer' }}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
@@ -288,11 +355,18 @@ export default function PostDetailPage({ user, onLogout }) {
                           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{comment.createdAt?.slice(0, 10)}</span>
                         </div>
                         {/* pre-wrap: 입력한 줄바꿈을 그대로 보여준다. break-word: 긴 단어가 칸을 넘지 않게. */}
-                        <div style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{comment.content}</div>
-                        <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
-                          {user && <button onClick={() => setReplyInputId(replyInputId === comment.commentId ? null : comment.commentId)} style={{ border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>답글</button>}
-                          {user && user.userId === comment.userId && <button onClick={() => handleCommentDelete(comment.commentId)} style={{ border: 'none', background: 'transparent', color: 'var(--danger)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>삭제</button>}
-                        </div>
+                        {editingId === comment.commentId ? (
+                          <InlineCommentEditor value={editingContent} onChange={setEditingContent} onSave={() => handleCommentEdit(comment.commentId)} onCancel={cancelEdit} />
+                        ) : (
+                          <>
+                            <div style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{comment.content}</div>
+                            <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+                              {user && <button onClick={() => setReplyInputId(replyInputId === comment.commentId ? null : comment.commentId)} style={commentActionBtn('var(--text-muted)')}>답글</button>}
+                              {user && user.userId === comment.userId && <button onClick={() => startEdit(comment)} style={commentActionBtn('var(--text-muted)')}>수정</button>}
+                              {user && user.userId === comment.userId && <button onClick={() => handleCommentDelete(comment.commentId)} style={commentActionBtn('var(--danger)')}>삭제</button>}
+                            </div>
+                          </>
+                        )}
                         {replyInputId === comment.commentId && (
                           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginTop: 8 }}>
                             <CommentComposer
@@ -315,8 +389,19 @@ export default function PostDetailPage({ user, onLogout }) {
                             <span style={{ fontSize: 13, fontWeight: 600 }}>{reply.nickname}</span>
                             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{reply.createdAt?.slice(0, 10)}</span>
                           </div>
-                          <div style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{reply.content}</div>
-                          {user && user.userId === reply.userId && <button onClick={() => handleCommentDelete(reply.commentId)} style={{ border: 'none', background: 'transparent', color: 'var(--danger)', fontSize: 12, cursor: 'pointer', marginTop: 4, fontFamily: 'inherit' }}>삭제</button>}
+                          {editingId === reply.commentId ? (
+                            <InlineCommentEditor value={editingContent} onChange={setEditingContent} onSave={() => handleCommentEdit(reply.commentId)} onCancel={cancelEdit} />
+                          ) : (
+                            <>
+                              <div style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{reply.content}</div>
+                              {user && user.userId === reply.userId && (
+                                <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                                  <button onClick={() => startEdit(reply)} style={commentActionBtn('var(--text-muted)')}>수정</button>
+                                  <button onClick={() => handleCommentDelete(reply.commentId)} style={commentActionBtn('var(--danger)')}>삭제</button>
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
                       </div>
                     ))}

@@ -4,6 +4,14 @@ import UserShell from '../components/layout/UserShell'
 import useIsMobile from '../hooks/useIsMobile'
 import useAuthNav from '../hooks/useAuthNav'
 import { apiGet, apiSend } from '../utils/adminApi'
+import { POST_CATEGORY } from '../theme/tokens'
+
+// 긴급 신고 상태 배지 스타일 (RECEIVED→PROCESSING→RESOLVED, 허위는 isFalseReport)
+const REPORT_STATUS = {
+  RECEIVED:   { label: '접수',   color: 'var(--blue-primary)', bg: 'var(--blue-tint)' },
+  PROCESSING: { label: '처리중', color: 'var(--warning)',      bg: 'rgba(245,158,11,.13)' },
+  RESOLVED:   { label: '완료',   color: 'var(--safe)',         bg: 'rgba(16,185,129,.13)' },
+}
 
 function Card({ title, desc, children }) {
   return (
@@ -63,20 +71,27 @@ export default function MyInfoPage({ user, onLogout, onUpdateUser }) {
 
   // 신고 신뢰도: GET /users/fake(허위신고 횟수) + GET /users/black(블랙리스트 여부)
   const [reportStats, setReportStats] = useState({ fakeReports: 0, blacklisted: false })
+  // 내 활동: GET /users/my/posts(내가 쓴 글) + GET /users/my/reports(내 신고 내역)
+  const [myPosts, setMyPosts] = useState([])
+  const [myReports, setMyReports] = useState([])
 
   useEffect(() => {
     if (!user) return
     let alive = true
     ;(async () => {
-      const [fake, black] = await Promise.all([
+      const [fake, black, posts, reports] = await Promise.all([
         apiGet('/users/fake').catch(() => null),
         apiGet('/users/black').catch(() => null),
+        apiGet('/users/my/posts').catch(() => []),
+        apiGet('/users/my/reports').catch(() => []),
       ])
       if (!alive) return
       setReportStats({
         fakeReports: fake?.falseReportCount ?? 0,
         blacklisted: black?.isBlacklisted ?? false,
       })
+      setMyPosts(Array.isArray(posts) ? posts : [])
+      setMyReports(Array.isArray(reports) ? reports : [])
     })()
     return () => { alive = false }
   }, [user])
@@ -212,6 +227,54 @@ export default function MyInfoPage({ user, onLogout, onUpdateUser }) {
             </div>
             <Toggle checked={alarmSound} onChange={() => setAlarmSound(v => !v)} />
           </div>
+        </Card>
+
+        {/* 내가 쓴 글 (안전 설정 아래, 신고 신뢰도 위) */}
+        <Card title="내가 쓴 글" desc={myPosts.length > 0 ? `총 ${myPosts.length}개의 게시글을 작성했습니다.` : '커뮤니티에 작성한 글이 여기에 표시됩니다.'}>
+          {myPosts.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {myPosts.map(post => {
+                const c = POST_CATEGORY[post.category] ?? POST_CATEGORY.INFO
+                return (
+                  <div key={post.postId} onClick={() => navigate(`/community/${post.postId}`)} style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', cursor: 'pointer',
+                    background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12,
+                  }}>
+                    <span style={{ flexShrink: 0, background: c.bg, color: c.color, fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 7, whiteSpace: 'nowrap' }}>{c.label}</span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{post.title}</span>
+                    <span style={{ flexShrink: 0, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{String(post.createdAt ?? '').slice(0, 10)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '18px 0' }}>아직 작성한 글이 없습니다.</div>
+          )}
+        </Card>
+
+        {/* 내 신고 내역 */}
+        <Card title="내 신고 내역" desc={myReports.length > 0 ? `총 ${myReports.length}건의 긴급 신고 내역이 있습니다.` : '내가 접수한 긴급 신고가 여기에 표시됩니다.'}>
+          {myReports.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {myReports.map(rep => {
+                const s = rep.isFalseReport
+                  ? { label: '허위', color: 'var(--danger)', bg: 'rgba(225,29,72,.10)' }
+                  : (REPORT_STATUS[rep.reportStatus] ?? REPORT_STATUS.RECEIVED)
+                return (
+                  <div key={rep.reportId} style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px',
+                    background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12,
+                  }}>
+                    <span style={{ flexShrink: 0, background: s.bg, color: s.color, fontSize: 10.5, fontWeight: 800, padding: '3px 9px', borderRadius: 7, whiteSpace: 'nowrap' }}>{s.label}</span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: 'var(--text-strong)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rep.description || '긴급 신고'}</span>
+                    <span style={{ flexShrink: 0, fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{String(rep.reportedAt ?? '').slice(0, 10)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '18px 0' }}>아직 신고 내역이 없습니다.</div>
+          )}
         </Card>
 
         {/* 신고 신뢰도 */}
