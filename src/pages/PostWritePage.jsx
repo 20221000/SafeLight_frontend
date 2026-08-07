@@ -79,7 +79,7 @@ export default function PostWritePage({ user, onLogout }) {
         formData.append('title', title)
         formData.append('content', content)
         formData.append('category', category)
-        formData.append('userId', user.userId)
+        // 작성자는 백엔드가 JWT에서 읽는다. userId 를 보내도 쓰이지 않는다.
         files.forEach(file => formData.append('files', file))
         const res = await fetch('/posts/with-files', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData })
         const json = await readEnvelope(res)
@@ -88,7 +88,7 @@ export default function PostWritePage({ user, onLogout }) {
         const res = await fetch('/posts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ title, content, category, userId: user.userId }),
+          body: JSON.stringify({ title, content, category }),
         })
         const json = await readEnvelope(res)
         if (!json.success) { alert(json.message || '게시글 등록에 실패했습니다.'); return }

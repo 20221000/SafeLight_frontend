@@ -1,5 +1,6 @@
 // 관리자 페이지 공용 API 헬퍼
-// 모든 백엔드 응답은 { success, data, message } 형태이며, Authorization 헤더로 JWT를 전달한다.
+// 모든 백엔드 응답은 { success, data, message, error } 형태이며, Authorization 헤더로 JWT를 전달한다.
+// 실패 문구는 readEnvelope 가 error.message 를 message 로 올려주므로 여기서는 message 만 보면 된다.
 
 import { readEnvelope } from './apiResponse'
 

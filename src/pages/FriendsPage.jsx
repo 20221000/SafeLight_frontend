@@ -17,6 +17,18 @@ function Toggle({ checked, onChange }) {
   )
 }
 
+// 긴급공유는 방향이 둘이다. 내 쪽은 토글로 바꾸고, 상대 쪽은 읽기 전용 배지로 보여준다.
+function ShareBadge({ on }) {
+  return (
+    <span style={{
+      fontSize: 11.5, fontWeight: 700, padding: '4px 9px', borderRadius: 8, whiteSpace: 'nowrap',
+      background: on ? 'var(--blue-tint)' : 'var(--bg)',
+      color: on ? 'var(--blue-primary)' : 'var(--text-muted)',
+      border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
+    }}>{on ? 'ON' : 'OFF'}</span>
+  )
+}
+
 function Avatar({ name }) {
   return (
     <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--blue-tint)', color: 'var(--blue-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, flexShrink: 0 }}>
@@ -31,7 +43,9 @@ export default function FriendsPage({ user, onLogout }) {
   const [tab, setTab] = useState('친구 목록')
   const [search, setSearch] = useState('')
 
-  const [friends, setFriends] = useState([])          // { friendsId, friendUserId, friendNickname, isEmergencyAllowed }
+  // isEmergencyAllowed = 내가 상대에게 내 위치를 공유하는지
+  // isEmergencyAllowedByFriend = 상대가 나에게 자기 위치를 공유하는지 (이게 OFF면 상대 긴급 위치 조회가 403)
+  const [friends, setFriends] = useState([])          // { friendsId, friendUserId, friendNickname, isEmergencyAllowed, isEmergencyAllowedByFriend }
   const [received, setReceived] = useState([])         // { requestId, senderId, senderNickname }
   const [sent, setSent] = useState([])                 // { requestId, receiverId, receiverNickname }
   const [loading, setLoading] = useState(false)
@@ -92,9 +106,18 @@ export default function FriendsPage({ user, onLogout }) {
     try { await apiSend(`/friends/${friendUserId}`, 'DELETE'); load() }
     catch (e) { alert('친구 삭제 실패: ' + e.message) }
   }
-  const toggleEmergency = async (friendsId) => {
-    try { await apiSend(`/friends/${friendsId}/emergency-allow`, 'PUT'); load() }
-    catch (e) { alert('설정 변경 실패: ' + e.message) }
+  // 백엔드 EmergencyAllowUpdateRequest 는 isEmergencyAllowed 를 필수 본문으로 받는다.
+  // 예전엔 본문 없이 PUT 을 던져 "Required request body is missing" 400 으로 매번 실패했다.
+  const toggleEmergency = async (friend) => {
+    const next = !friend.isEmergencyAllowed
+    try {
+      const updated = await apiSend(`/friends/${friend.friendsId}/emergency-allow`, 'PUT', { isEmergencyAllowed: next })
+      // 응답에 양방향 설정이 다 들어 있어 목록 3종을 다시 받지 않고 그 행만 갱신한다.
+      if (updated) setFriends(prev => prev.map(f => (f.friendsId === friend.friendsId ? { ...f, ...updated } : f)))
+      else load()
+    } catch (e) {
+      alert('설정 변경 실패: ' + e.message)
+    }
   }
 
   const counts = { '친구 목록': friends.length, '받은 요청': received.length, '보낸 요청': sent.length }
@@ -105,6 +128,12 @@ export default function FriendsPage({ user, onLogout }) {
         <div>
           <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.4px' }}>친구 관리</div>
           <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>긴급 위치 공유를 허용할 친구를 관리하세요</div>
+          {/* 공유 설정은 한쪽만 켜도 되는 단방향이다. 두 열이 뭘 뜻하는지 여기서 한 번 설명한다. */}
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.6 }}>
+            <b style={{ color: 'var(--text-strong)' }}>내 공유</b>는 내 긴급 위치를 그 친구에게 보여줄지,
+            <b style={{ color: 'var(--text-strong)' }}> 상대 공유</b>는 그 친구가 나에게 허용했는지입니다.
+            상대 공유가 <b>OFF</b>면 그 친구의 긴급 위치는 열람할 수 없습니다.
+          </div>
         </div>
 
         {/* 친구 추가 (현재는 사용자 ID로 요청 — 닉네임 검색 API 준비 중) */}
@@ -145,17 +174,10 @@ export default function FriendsPage({ user, onLogout }) {
           ) : tab === '친구 목록' ? (
             friends.length === 0
               ? <Empty text="아직 친구가 없습니다. 위에서 사용자 ID로 요청을 보내보세요." />
-              : friends.map(f => (
-                <Row key={f.friendsId}>
-                  <Avatar name={f.friendNickname} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600 }}>{f.friendNickname}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>ID {f.friendUserId}</div>
-                  </div>
-                  <span style={{ fontSize: 11.5, color: f.isEmergencyAllowed ? 'var(--blue-primary)' : 'var(--text-muted)', fontWeight: 600 }}>긴급공유 {f.isEmergencyAllowed ? 'ON' : 'OFF'}</span>
-                  <Toggle checked={f.isEmergencyAllowed} onChange={() => toggleEmergency(f.friendsId)} />
-                  {/* 쪽지 쓰기 — 쪽지함으로 이동하며 받는 사람을 미리 지정한다.
-                      모바일은 행이 좁아 아이콘만 남긴다. */}
+              : friends.map(f => {
+                // 쪽지 쓰기 — 쪽지함으로 이동하며 받는 사람을 미리 지정한다.
+                // 모바일은 행이 좁아 아이콘만 남긴다.
+                const messageBtn = (
                   <button
                     title={`${f.friendNickname} 님에게 쪽지`}
                     onClick={() => navigate('/myinfo/messages', { state: { to: f.friendUserId } })}
@@ -166,9 +188,64 @@ export default function FriendsPage({ user, onLogout }) {
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v12H5.2L4 17.5z" /></svg>
                     {!isMobile && '쪽지'}
                   </button>
-                  <button style={btnGhost} onClick={() => removeFriend(f.friendUserId, f.friendNickname)}>삭제</button>
-                </Row>
-              ))
+                )
+                const deleteBtn = <button style={btnGhost} onClick={() => removeFriend(f.friendUserId, f.friendNickname)}>삭제</button>
+
+                // 내가 보낸 공유(토글) + 상대가 보낸 공유(읽기 전용).
+                // 상대 쪽이 OFF면 그 친구의 긴급 위치를 열어도 403이라 미리 알려준다.
+                const myShare = (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <span style={{ fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 600 }}>내 공유</span>
+                    <Toggle checked={f.isEmergencyAllowed} onChange={() => toggleEmergency(f)} />
+                  </div>
+                )
+                const theirShare = (
+                  <div
+                    title={f.isEmergencyAllowedByFriend
+                      ? '이 친구가 긴급 상황일 때 위치를 볼 수 있습니다.'
+                      : '이 친구가 아직 나에게 위치 공유를 허용하지 않았습니다.'}
+                    style={{ display: 'flex', alignItems: 'center', gap: 7 }}
+                  >
+                    <span style={{ fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 600 }}>상대 공유</span>
+                    <ShareBadge on={Boolean(f.isEmergencyAllowedByFriend)} />
+                  </div>
+                )
+
+                // 모바일 375px 에서는 한 줄에 다 못 넣는다. 이름/버튼 줄과 공유 설정 줄로 나눈다.
+                if (isMobile) {
+                  return (
+                    <div key={f.friendsId} style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <Avatar name={f.friendNickname} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.friendNickname}</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>ID {f.friendUserId}</div>
+                        </div>
+                        {messageBtn}
+                        {deleteBtn}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                        {myShare}
+                        {theirShare}
+                      </div>
+                    </div>
+                  )
+                }
+
+                return (
+                  <Row key={f.friendsId}>
+                    <Avatar name={f.friendNickname} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{f.friendNickname}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>ID {f.friendUserId}</div>
+                    </div>
+                    {myShare}
+                    {theirShare}
+                    {messageBtn}
+                    {deleteBtn}
+                  </Row>
+                )
+              })
           ) : tab === '받은 요청' ? (
             received.length === 0
               ? <Empty text="받은 친구 요청이 없습니다." />

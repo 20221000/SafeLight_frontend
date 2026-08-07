@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import AdminShell from '../components/layout/AdminShell'
 import ActionSheet from '../components/layout/ActionSheet'
+import RowMenu from '../components/Admin/RowMenu'
 import { adminStyles as s, LEVEL_STYLE, STATUS_STYLE } from '../components/Admin/adminStyles'
 import { apiSend } from '../utils/adminApi'
-import { fetchAllReports, computeReportStats } from '../utils/reportsAggregate'
+import { fetchReportPage, fetchReportStats, fetchAllReports } from '../utils/reportsAggregate'
 import useIsMobile from '../hooks/useIsMobile'
 import Icon from '../components/Icon'
 
@@ -11,11 +12,17 @@ const fmtDateTime = (iso) => (iso ? String(iso).slice(0, 16).replace('T', ' ') :
 // 모바일 카드는 공간이 좁아 날짜 대신 'MM-DD HH:mm'
 const fmtShort = (iso) => (iso ? String(iso).slice(5, 16).replace('T', ' ') : '-')
 
+// 한 번에 받아올 행 수. 예전에는 전체(최대 5,000행)를 받아 놓고 걸렀다.
+const PAGE_SIZE = 20
+
 // 상태 필터 옵션 (label ↔ 백엔드 코드)
+// 백엔드 EmergencyReportStatus 는 RECEIVED/RESOLVED/FALSE 3개뿐이다.
+// 필터 컨트롤 앞 라벨 — '기간', '상태'
+const filterLabel = { fontSize: 12, color: 'var(--text-muted)', fontWeight: 700, whiteSpace: 'nowrap' }
+
 const STATUS_OPTIONS = [
   { code: 'ALL',        label: '전체 상태' },
   { code: 'RECEIVED',   label: '접수됨' },
-  { code: 'PROCESSING', label: '처리중' },
   { code: 'RESOLVED',   label: '해결완료' },
   { code: 'FALSE',      label: '허위신고' },
 ]
@@ -23,31 +30,92 @@ const STATUS_OPTIONS = [
 export default function AdminReportPage({ user, onLogout }) {
   const isMobile = useIsMobile()
   const [reports, setReports] = useState([])
+  const [pageInfo, setPageInfo] = useState({ page: 0, totalPages: 0, totalElements: 0, last: true })
+  const [stats, setStats] = useState({ total: 0, received: 0, resolved: 0, falseCount: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [statusFilter, setStatusFilter] = useState('ALL')
-  const [search, setSearch] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [search, setSearch] = useState('')          // 입력 중인 값
+  const [searchTerm, setSearchTerm] = useState('')  // 디바운스로 확정된 검색어
   const [sheetReport, setSheetReport] = useState(null) // 모바일 '⋮' 액션 시트 대상
 
-  const load = useCallback(async () => {
-    if (!user || user.role !== 'ADMIN') return
+  // 기간을 거꾸로 넣으면 백엔드가 400을 던지므로 미리 막는다.
+  const invalidRange = Boolean(startDate && endDate && startDate > endDate)
+
+  const filters = useMemo(
+    () => ({ statusFilter, startDate, endDate }),
+    [statusFilter, startDate, endDate],
+  )
+
+  // 타이핑 한 글자마다 서버를 때리지 않도록 검색어만 디바운스한다.
+  useEffect(() => {
+    const t = setTimeout(() => setSearchTerm(search.trim()), 350)
+    return () => clearTimeout(t)
+  }, [search])
+
+  // append 는 모바일 '더 보기' 전용 — 데스크탑은 페이지를 통째로 갈아 끼운다.
+  const load = useCallback(async (page = 0, { append = false } = {}) => {
+    if (!user || user.role !== 'ADMIN' || invalidRange) return
     setLoading(true)
     setError(null)
     try {
-      setReports(await fetchAllReports())
+      if (searchTerm) {
+        // 백엔드 GET /admin/emergency-reports 에는 키워드 파라미터가 없다.
+        // 검색할 때만 현재 필터에 걸린 전체를 받아 와 아래에서 거른다.
+        const all = await fetchAllReports(filters)
+        setReports(all)
+        setPageInfo({ page: 0, totalPages: 1, totalElements: all.length, last: true })
+      } else {
+        const res = await fetchReportPage(filters, page, PAGE_SIZE)
+        setReports(prev => (append ? [...prev, ...res.reports] : res.reports))
+        setPageInfo({ page: res.page, totalPages: res.totalPages, totalElements: res.totalElements, last: res.last })
+      }
     } catch (e) {
       setError(e.message)
     } finally {
       setLoading(false)
     }
-  }, [user])
+  }, [user, filters, searchTerm, invalidRange])
 
-  useEffect(() => { load() }, [load])
+  // KPI 는 목록과 따로 센다. size=1 요청 4번이라 페이지를 넘겨도 숫자가 흔들리지 않는다.
+  const loadStats = useCallback(async () => {
+    if (!user || user.role !== 'ADMIN' || invalidRange) return
+    try {
+      setStats(await fetchReportStats({ startDate, endDate }))
+    } catch {
+      // 집계 실패가 목록까지 막을 이유는 없다.
+    }
+  }, [user, startDate, endDate, invalidRange])
+
+  // 필터나 검색어가 바뀌면 언제나 첫 페이지부터 다시 받는다.
+  useEffect(() => { load(0) }, [load])
+  useEffect(() => { loadStats() }, [loadStats])
+
+  // 상태 필터의 서버 조건과 같은 판정 — 필터에서 벗어난 행은 목록에서 빼기 위해 쓴다.
+  const matchesStatusFilter = useCallback((r) => {
+    if (statusFilter === 'ALL') return true
+    if (statusFilter === 'FALSE') return Boolean(r.isFalseReport)
+    return r.reportStatus === statusFilter
+  }, [statusFilter])
+
+  // PATCH 응답이 갱신된 신고 한 건이라 목록을 다시 받지 않고 그 행만 교체한다
+  // (다시 받으면 데스크탑에서 보고 있던 페이지 위치를 잃는다).
+  const applyUpdated = useCallback((reportId, updated) => {
+    if (!updated) { load(pageInfo.page); return }
+    setReports(prev => prev.flatMap(r => {
+      if (r.reportId !== reportId) return [r]
+      const next = { ...r, ...updated }
+      return matchesStatusFilter(next) ? [next] : []
+    }))
+    loadStats()
+  }, [load, loadStats, matchesStatusFilter, pageInfo.page])
 
   const setStatus = async (report, status) => {
     try {
-      await apiSend(`/emergency-reports/${report.reportId}/status`, 'PATCH', { reportStatus: status })
-      await load()
+      const updated = await apiSend(`/emergency-reports/${report.reportId}/status`, 'PATCH', { reportStatus: status })
+      applyUpdated(report.reportId, updated)
     } catch (e) {
       alert('상태 변경 실패: ' + e.message)
     }
@@ -56,31 +124,61 @@ export default function AdminReportPage({ user, onLogout }) {
   const markFalse = async (report) => {
     if (!window.confirm(`신고 #${report.reportId}을(를) 허위신고로 처리할까요? 신고자의 허위신고 횟수가 증가합니다.`)) return
     try {
-      await apiSend(`/emergency-reports/${report.reportId}/false-report`, 'PATCH')
-      await load()
+      const updated = await apiSend(`/emergency-reports/${report.reportId}/false-report`, 'PATCH')
+      applyUpdated(report.reportId, updated)
     } catch (e) {
       alert('허위신고 처리 실패: ' + e.message)
     }
   }
 
-  // KPI 집계
-  const stats = useMemo(() => computeReportStats(reports), [reports])
+  const resetFilters = () => {
+    setStatusFilter('ALL'); setStartDate(''); setEndDate(''); setSearch(''); setSearchTerm('')
+  }
+  const hasFilter = Boolean(statusFilter !== 'ALL' || startDate || endDate || search)
 
-  const filtered = useMemo(() => reports.filter(r => {
-    const matchStatus = statusFilter === 'ALL' || r.reportStatus === statusFilter
-    const q = search.trim().toLowerCase()
-    const matchSearch = !q || [r.nickname, r.description, r.reportId]
-      .some(v => String(v ?? '').toLowerCase().includes(q))
-    return matchStatus && matchSearch
-  }), [reports, statusFilter, search])
+  // 상태·기간은 서버가 이미 걸러 보냈다. 여기서 거르는 건 키워드뿐이다.
+  const filtered = useMemo(() => {
+    const q = searchTerm.toLowerCase()
+    if (!q) return reports
+    return reports.filter(r => [r.nickname, r.description, r.reportId]
+      .some(v => String(v ?? '').toLowerCase().includes(q)))
+  }, [reports, searchTerm])
+
+  // 검색 중에는 걸러낸 결과 수를, 평소에는 서버가 알려준 전체 건수를 보여준다.
+  const shownCount = searchTerm ? filtered.length : pageInfo.totalElements
+
+  const emptyText = loading
+    ? '불러오는 중…'
+    : hasFilter ? '조건에 맞는 신고가 없습니다.' : '신고 데이터가 없습니다.'
 
   const kpiCards = [
     { key: 'total',      icon: 'siren',        label: '전체 신고', value: stats.total,      color: '#2563EB' },
     { key: 'received',   icon: 'inbox',        label: '접수됨',    value: stats.received,   color: '#E11D48' },
-    { key: 'processing', icon: 'clock',        label: '처리중',    value: stats.processing, color: '#F59E0B' },
     { key: 'resolved',   icon: 'check-circle', label: '해결완료',  value: stats.resolved,   color: '#10B981' },
     { key: 'falseCount', icon: 'ban',          label: '허위신고',  value: stats.falseCount, color: '#64748B' },
   ]
+
+  // 기간 필터 — 값은 startDate/endDate 파라미터로 그대로 서버에 넘어간다.
+  // 데스크탑·모바일이 같은 마크업을 쓰고, 폭만 부모가 정한다.
+  const dateRange = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 250px', maxWidth: 320 }}>
+      <input
+        type="date" value={startDate} max={endDate || undefined}
+        onChange={e => setStartDate(e.target.value)}
+        style={{ ...s.input, flex: 1, minWidth: 0, padding: '10px 11px', cursor: 'pointer' }}
+      />
+      <span style={{ color: 'var(--text-muted)', fontSize: 13, flexShrink: 0 }}>~</span>
+      <input
+        type="date" value={endDate} min={startDate || undefined}
+        onChange={e => setEndDate(e.target.value)}
+        style={{ ...s.input, flex: 1, minWidth: 0, padding: '10px 11px', cursor: 'pointer' }}
+      />
+    </div>
+  )
+
+  const rangeWarning = invalidRange && (
+    <div style={{ ...s.errorBox }}>시작일이 종료일보다 늦습니다. 기간을 다시 골라주세요.</div>
+  )
 
   // 모바일(AM2): 데스크탑 테이블 대신 카드 리스트 + 상태 필터 칩 + '⋮' 액션 시트.
   // KPI 카드는 칩의 건수가 대신하므로 생략(AM2 목업과 동일).
@@ -88,13 +186,12 @@ export default function AdminReportPage({ user, onLogout }) {
     const chips = [
       { code: 'ALL', label: '전체', count: stats.total },
       { code: 'RECEIVED', label: '접수', count: stats.received },
-      { code: 'PROCESSING', label: '처리중', count: stats.processing },
       { code: 'RESOLVED', label: '해결', count: stats.resolved },
       { code: 'FALSE', label: '오탐', count: stats.falseCount },
     ]
 
     const sheetActions = (r) => [
-      { label: '처리중으로 변경', tone: 'primary', disabled: r.reportStatus === 'PROCESSING' || r.isFalseReport, onClick: () => setStatus(r, 'PROCESSING') },
+      { label: '접수됨으로 되돌리기', tone: 'primary', disabled: r.reportStatus === 'RECEIVED' || r.isFalseReport, onClick: () => setStatus(r, 'RECEIVED') },
       { label: '해결완료로 변경', tone: 'safe', disabled: r.reportStatus === 'RESOLVED' || r.isFalseReport, onClick: () => setStatus(r, 'RESOLVED') },
       { label: r.isFalseReport ? '허위신고 처리됨' : '허위신고(오탐)로 처리', tone: 'danger', disabled: r.isFalseReport, onClick: () => markFalse(r) },
     ]
@@ -103,12 +200,22 @@ export default function AdminReportPage({ user, onLogout }) {
       <AdminShell user={user} onLogout={onLogout} active="reports" title="신고 관리" subtitle="긴급신고(SOS) · 원클릭 접수 건">
         {error && <div style={s.errorBox}>데이터를 불러오지 못했습니다: {error}</div>}
 
+        {rangeWarning}
+
         <input
           style={{ ...s.searchInput, maxWidth: '100%' }}
           placeholder="신고자 / 내용 / 신고번호 검색…"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
+
+        {/* 기간 필터 + 초기화 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {dateRange}
+          {hasFilter && (
+            <button onClick={resetFilters} style={{ ...s.btnGray, minHeight: 40, padding: '0 13px', flexShrink: 0 }}>초기화</button>
+          )}
+        </div>
 
         {/* 상태 필터 칩 — 안 들어가면 다음 줄로 내린다. 가로 스크롤은 쓰지 않는다
             (스크롤바가 없으면 화면 밖 칩을 발견할 방법이 없다). */}
@@ -138,7 +245,7 @@ export default function AdminReportPage({ user, onLogout }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {filtered.length === 0 && (
             <div style={{ ...s.card, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-              {loading ? '불러오는 중…' : '신고 데이터가 없습니다.'}
+              {emptyText}
             </div>
           )}
           {filtered.map(r => {
@@ -182,12 +289,6 @@ export default function AdminReportPage({ user, onLogout }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {r.reportStatus === 'RECEIVED' && !r.isFalseReport && (
                     <button
-                      onClick={() => setStatus(r, 'PROCESSING')}
-                      style={{ minHeight: 44, padding: '0 18px', border: 'none', borderRadius: 11, background: 'var(--blue-primary)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
-                    >처리 시작</button>
-                  )}
-                  {r.reportStatus === 'PROCESSING' && !r.isFalseReport && (
-                    <button
                       onClick={() => setStatus(r, 'RESOLVED')}
                       style={{ minHeight: 44, padding: '0 18px', border: 'none', borderRadius: 11, background: 'var(--safe)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
                     >해결 처리</button>
@@ -209,6 +310,26 @@ export default function AdminReportPage({ user, onLogout }) {
           })}
         </div>
 
+        {/* 더 보기 — 카드 리스트라 페이지 번호보다 이어 붙이는 쪽이 맞다.
+            검색 중에는 이미 전체를 받아 왔으므로 감춘다. */}
+        {!searchTerm && !pageInfo.last && (
+          <button
+            onClick={() => load(pageInfo.page + 1, { append: true })}
+            disabled={loading}
+            style={{
+              minHeight: 46, borderRadius: 12, cursor: loading ? 'wait' : 'pointer', fontFamily: 'inherit',
+              border: '1px solid var(--border)', background: 'var(--surface)',
+              color: 'var(--text-strong)', fontSize: 13.5, fontWeight: 700,
+            }}
+          >{loading ? '불러오는 중…' : `더 보기 (${filtered.length} / ${shownCount})`}</button>
+        )}
+
+        <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>
+          {searchTerm
+            ? `검색 결과 ${shownCount}건 · 현재 필터 전체에서 검색`
+            : `${filtered.length} / ${shownCount}건`}
+        </div>
+
         {sheetReport && (
           <ActionSheet
             title={`신고 #ER-${sheetReport.reportId}`}
@@ -221,12 +342,41 @@ export default function AdminReportPage({ user, onLogout }) {
     )
   }
 
+  // 데스크탑 '관리' 열 드롭다운 항목. 상태를 고르는 메뉴이므로 라벨은 상태 이름 그대로 두고
+  // 지금 상태에 체크를 준다(모바일 시트는 버튼 하나짜리라 '…로 변경' 서술형 라벨을 유지한다).
+  // 허위신고는 되돌릴 수 없고 신고자에게 벌점까지 붙으므로 설명을 달아 둔다 —
+  // 예전 빨간 버튼은 아무 경고 없이 확인창부터 띄웠다.
+  const desktopActions = (r) => [
+    {
+      label: '접수됨',
+      tone: 'primary',
+      selected: r.reportStatus === 'RECEIVED' && !r.isFalseReport,
+      disabled: r.isFalseReport || r.reportStatus === 'RECEIVED',
+      onClick: () => setStatus(r, 'RECEIVED'),
+    },
+    {
+      label: '해결완료',
+      tone: 'safe',
+      selected: r.reportStatus === 'RESOLVED',
+      disabled: r.isFalseReport || r.reportStatus === 'RESOLVED',
+      onClick: () => setStatus(r, 'RESOLVED'),
+    },
+    {
+      label: '허위신고',
+      tone: 'danger',
+      selected: r.isFalseReport,
+      disabled: r.isFalseReport,
+      caption: '신고자 허위신고 +1 · 누적 3회면 블랙리스트',
+      onClick: () => markFalse(r),
+    },
+  ]
+
   return (
     <AdminShell user={user} onLogout={onLogout} active="reports" title="신고 관리" subtitle="원클릭 긴급신고 접수·처리 현황">
       {error && <div style={s.errorBox}>데이터를 불러오지 못했습니다: {error}</div>}
 
       {/* KPI */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
         {kpiCards.map(item => (
           <div key={item.key} style={s.kpiCard}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -244,15 +394,21 @@ export default function AdminReportPage({ user, onLogout }) {
         ))}
       </div>
 
-      {/* 필터 */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+      {rangeWarning}
+
+      {/* 필터 — 상태·기간은 서버가 거른다. 검색어만 백엔드에 파라미터가 없어 아래에서 건다. */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
         <input
           style={s.searchInput}
           placeholder="신고자 / 내용 / 신고번호 검색…"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        {/* 라벨 없는 날짜칸 두 개는 '무엇의 기간'인지 읽히지 않는다. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <span style={filterLabel}>기간</span>
+          {dateRange}
+          <span style={{ ...filterLabel, marginLeft: 4 }}>상태</span>
           <select
             style={{ ...s.input, width: 'auto', cursor: 'pointer' }}
             value={statusFilter}
@@ -260,12 +416,23 @@ export default function AdminReportPage({ user, onLogout }) {
           >
             {STATUS_OPTIONS.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
           </select>
-          <span style={{ color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>총 {filtered.length}건</span>
+          {hasFilter && <button onClick={resetFilters} style={s.btnGray}>초기화</button>}
         </div>
       </div>
 
-      {/* 신고 테이블 */}
+      {/* 신고 테이블 — 총 건수와 페이저를 카드 안에 둔다.
+          밖에 두면 건수는 필터의 일부처럼, 페이저는 표와 무관한 것처럼 읽힌다. */}
       <div style={s.card}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '0 4px 12px', borderBottom: '1px solid var(--border)', marginBottom: 4,
+        }}>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>신고 목록</span>
+          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+            {searchTerm ? '검색 결과 ' : '총 '}
+            <b style={{ color: 'var(--text-strong)', fontWeight: 800, fontFamily: "'Inter',sans-serif" }}>{shownCount.toLocaleString()}</b>건
+          </span>
+        </div>
         <table style={s.table}>
           <thead>
             <tr>{['신고번호', '신고자', '상태', '위험구역', '위험도', '좌표', '내용', '발생시각', '관리']
@@ -294,21 +461,45 @@ export default function AdminReportPage({ user, onLogout }) {
                   {r.description || '-'}
                 </td>
                 <td style={{ ...s.td, whiteSpace: 'nowrap' }}>{fmtDateTime(r.reportedAt)}</td>
+                {/* 버튼 3개를 늘어놓으면 행마다 색이 셋씩 튀어 표가 시끄럽고, 무엇보다
+                    인라인 스타일에는 :disabled 가 없어 못 누르는 버튼이 멀쩡해 보였다.
+                    드롭다운으로 접고 현재 상태에 체크를 준다. (모바일은 ActionSheet 유지) */}
                 <td style={s.td}>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button style={s.btnOrange} onClick={() => setStatus(r, 'PROCESSING')} disabled={r.reportStatus === 'PROCESSING' || r.isFalseReport}>처리중</button>
-                    <button style={s.btnMint} onClick={() => setStatus(r, 'RESOLVED')} disabled={r.reportStatus === 'RESOLVED' || r.isFalseReport}>해결완료</button>
-                    <button style={s.btnRed} onClick={() => markFalse(r)} disabled={r.isFalseReport}>
-                      {r.isFalseReport ? '허위신고됨' : '허위신고'}
-                    </button>
-                  </div>
+                  <RowMenu
+                    label="상태 변경"
+                    disabled={r.isFalseReport}
+                    title={r.isFalseReport ? '허위신고로 확정된 건은 상태를 바꿀 수 없습니다.' : undefined}
+                    actions={desktopActions(r)}
+                  />
                 </td>
               </tr>
             )) : (
-              <tr><td colSpan={9} style={s.emptyRow}>{loading ? '불러오는 중…' : '신고 데이터가 없습니다.'}</td></tr>
+              <tr><td colSpan={9} style={s.emptyRow}>{emptyText}</td></tr>
             )}
           </tbody>
         </table>
+
+        {/* 페이지네이션 — 검색 중에는 이미 전체를 받아 온 뒤라 감춘다. */}
+        {!searchTerm && pageInfo.totalPages > 1 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
+          padding: '14px 4px 2px', borderTop: '1px solid var(--border)',
+        }}>
+          <button
+            style={{ ...s.btnGray, opacity: pageInfo.page === 0 || loading ? 0.5 : 1 }}
+            disabled={pageInfo.page === 0 || loading}
+            onClick={() => load(pageInfo.page - 1)}
+          >← 이전</button>
+          <span style={{ color: 'var(--text-muted)', fontSize: 13, fontFamily: "'Inter',sans-serif" }}>
+            {pageInfo.page + 1} / {pageInfo.totalPages}
+          </span>
+          <button
+            style={{ ...s.btnGray, opacity: pageInfo.last || loading ? 0.5 : 1 }}
+            disabled={pageInfo.last || loading}
+            onClick={() => load(pageInfo.page + 1)}
+          >다음 →</button>
+        </div>
+        )}
       </div>
     </AdminShell>
   )

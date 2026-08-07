@@ -1,35 +1,93 @@
-// 관리자 신고 집계 공용 유틸
-// 현재 백엔드에는 "전체 신고 조회" 단일 엔드포인트(GET /emergency-reports)가 없어,
-// 활성 위험구역별 신고를 모아서 구성한다. (활성 구역 기준이라 비활성화된 구역의 신고는 빠짐)
-// TODO(백엔드 연동): GET /emergency-reports(관리자 전체) 추가되면 fetchAllReports를 apiGet('/emergency-reports') 한 줄로 교체.
+// 관리자 신고 조회 공용 유틸
+// GET /admin/emergency-reports 는 status / isFalseReport / dangerZoneId / reporterId /
+// startDate / endDate 를 서버에서 걸러준다. 예전에는 이 파라미터를 하나도 안 쓰고
+// 전체를 긁어와 자바스크립트로 걸렀던 탓에 신고가 쌓일수록 관리자 화면이 느려졌다.
 import { apiGet } from './adminApi'
 
-export async function fetchAllReports() {
-  const zones = await apiGet('/danger-zones') // isActive=true 인 구역만 반환됨
-  const zoneList = Array.isArray(zones) ? zones : []
+// 백엔드 AdminEmergencyReportService.MAX_PAGE_SIZE 가 100이라 그 이상은 400이다.
+export const MAX_PAGE_SIZE = 100
+// 잘못된 last 값으로 무한 루프에 빠지지 않도록 상한을 둔다.
+const MAX_PAGES = 50
 
-  const perZone = await Promise.all(
-    zoneList.map(z =>
-      apiGet(`/danger-zones/${z.dangerZoneId}/reports`).catch(() => [])
-    )
-  )
+// <input type="date"> 는 '2026-08-06' 을 주지만 백엔드는 ISO_DATE_TIME 을 요구한다.
+// 종료일은 그 날 하루를 통째로 포함해야 하므로 23:59:59 로 맞춘다.
+const startOfDay = (d) => (d ? `${d}T00:00:00` : null)
+const endOfDay = (d) => (d ? `${d}T23:59:59` : null)
 
-  // reportId 기준 중복 제거 후 최신순 정렬
-  const byId = new Map()
-  perZone.flat().forEach(r => { if (r && r.reportId != null) byId.set(r.reportId, r) })
-  return [...byId.values()].sort(
-    (a, b) => String(b.reportedAt ?? '').localeCompare(String(a.reportedAt ?? ''))
-  )
+// 상태 필터 코드 → 서버 파라미터.
+// 'FALSE' 는 status 대신 isFalseReport 로 보낸다. markFalseReport 가 status 와 플래그를
+// 함께 세우는 반면 status 만 FALSE 로 바꾸는 경로도 있어, '허위 판정됨'의 근거는 플래그 쪽이다.
+function statusParams(statusFilter) {
+  if (!statusFilter || statusFilter === 'ALL') return {}
+  if (statusFilter === 'FALSE') return { isFalseReport: true }
+  return { status: statusFilter }
 }
 
-// 상태별 집계 (RECEIVED/PROCESSING/RESOLVED/FALSE)
-export function computeReportStats(reports) {
-  const list = Array.isArray(reports) ? reports : []
-  return {
-    total:      list.length,
-    received:   list.filter(r => r.reportStatus === 'RECEIVED').length,
-    processing: list.filter(r => r.reportStatus === 'PROCESSING').length,
-    resolved:   list.filter(r => r.reportStatus === 'RESOLVED').length,
-    falseCount: list.filter(r => r.reportStatus === 'FALSE' || r.isFalseReport).length,
+// 필터 객체 → 쿼리스트링. 빈 값은 아예 보내지 않는다(백엔드가 null 을 '조건 없음'으로 본다).
+function buildQuery(filters = {}, page = 0, size = 20) {
+  const { statusFilter, startDate, endDate, dangerZoneId, reporterId } = filters
+  const params = {
+    page,
+    size,
+    ...statusParams(statusFilter),
+    dangerZoneId: dangerZoneId ?? null,
+    reporterId: reporterId ?? null,
+    startDate: startOfDay(startDate),
+    endDate: endOfDay(endDate),
   }
+
+  const qs = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== null && v !== undefined && v !== '') qs.append(k, String(v))
+  })
+  return qs.toString()
+}
+
+// 한 페이지만 가져온다. 목록 화면의 기본 경로.
+// { reports, page, size, totalElements, totalPages, first, last } 를 그대로 돌려준다.
+export async function fetchReportPage(filters = {}, page = 0, size = 20) {
+  const res = await apiGet(`/admin/emergency-reports?${buildQuery(filters, page, size)}`)
+  return {
+    reports: Array.isArray(res?.reports) ? res.reports : [],
+    page: res?.page ?? page,
+    size: res?.size ?? size,
+    totalElements: res?.totalElements ?? 0,
+    totalPages: res?.totalPages ?? 0,
+    first: res?.first ?? page === 0,
+    last: res?.last ?? true,
+  }
+}
+
+// 건수만 필요할 때. size=1 로 요청해 totalElements 만 읽는다(행은 1건만 오간다).
+export async function fetchReportCount(filters = {}) {
+  const res = await apiGet(`/admin/emergency-reports?${buildQuery(filters, 0, 1)}`)
+  return res?.totalElements ?? 0
+}
+
+// KPI 4종. 페이지네이션과 무관하게 항상 전체 기준이라 화면을 넘겨도 숫자가 흔들리지 않는다.
+// 기간 필터가 걸려 있으면 그 기간 기준으로 집계한다.
+export async function fetchReportStats(filters = {}) {
+  const base = { startDate: filters.startDate, endDate: filters.endDate }
+  const [total, received, resolved, falseCount] = await Promise.all([
+    fetchReportCount(base),
+    fetchReportCount({ ...base, statusFilter: 'RECEIVED' }),
+    fetchReportCount({ ...base, statusFilter: 'RESOLVED' }),
+    fetchReportCount({ ...base, statusFilter: 'FALSE' }),
+  ])
+  return { total, received, resolved, falseCount }
+}
+
+// 필터에 걸린 전체를 이어 받는다.
+// 백엔드에 키워드 검색 파라미터가 없어서, 텍스트 검색을 할 때만 이 경로를 쓴다.
+export async function fetchAllReports(filters = {}) {
+  const all = []
+
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const res = await fetchReportPage(filters, page, MAX_PAGE_SIZE)
+    all.push(...res.reports)
+    // 백엔드가 reportedAt DESC 로 정렬해 내려주므로 여기서 다시 정렬하지 않는다.
+    if (res.reports.length === 0 || res.last) break
+  }
+
+  return all
 }

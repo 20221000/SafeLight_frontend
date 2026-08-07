@@ -4,6 +4,8 @@
 const PATHS = {
   'map-pin': '<path d="M12 21s7-6.4 7-11a7 7 0 1 0-14 0c0 4.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>',
   'alert-triangle': '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  // Icon.jsx 의 'store' 와 같은 모양(차양 + 양쪽 벽 + 출입구).
+  'store': '<path d="M6 4h12l3.5 5q-1.9 2.4-3.8 0q-1.9 2.4-3.8 0q-1.9 2.4-3.8 0q-1.9 2.4-3.8 0q-1.9 2.4-3.8 0L6 4z"/><path d="M4.6 10.6V20"/><path d="M19.4 10.6V20"/><path d="M9.4 20v-5.6h5.2V20"/>',
 }
 
 export function iconSvg(name, { size = 16, color = '#fff', strokeWidth = 2 } = {}) {

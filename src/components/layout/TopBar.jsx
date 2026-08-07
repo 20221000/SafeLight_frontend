@@ -2,9 +2,10 @@
 // 검색/현재위치는 PlaceSearchBox가 담당한다(모바일 헤더와 공유).
 import { useNavigate } from 'react-router-dom'
 import PlaceSearchBox from './PlaceSearchBox'
+import NotificationBell from './NotificationBell'
 import useRegionName from '../../hooks/useRegionName'
 
-export default function TopBar({ user, dark, onToggleDark, onPickPlace }) {
+export default function TopBar({ user, dark, onToggleDark, onPickPlace, unreadEmergency = 0, unreadMessages = 0 }) {
   const navigate = useNavigate()
 
   const nickname = user?.nickname || user?.username || '게스트'
@@ -44,8 +45,9 @@ export default function TopBar({ user, dark, onToggleDark, onPickPlace }) {
         <PlaceSearchBox onPickPlace={onPickPlace} />
       </div>
 
-      {/* 야간모드 · 프로필 (우측) */}
+      {/* 알림 · 야간모드 · 프로필 (우측) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
+        {user && <NotificationBell emergency={unreadEmergency} message={unreadMessages} />}
         <button
           onClick={onToggleDark}
           title="야간 모드"

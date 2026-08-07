@@ -8,6 +8,26 @@ import useIsMobile from '../hooks/useIsMobile'
 const LEVELS = ['LOW', 'MEDIUM', 'HIGH']
 const fmtDateTime = (iso) => (iso ? String(iso).slice(0, 16).replace('T', ' ') : '-')
 
+// 위험구역은 SOS 로 만들어질 때 expiredAt = 생성시각 + 24시간 이 박힌다.
+// 목록 API 는 아직 만료되지 않은 활성 구역만 내려주므로 여기 값은 항상 '해제 예정 시각'이다.
+// (관리자가 직접 비활성화하면 expiredAt 이 그 시각으로 바뀌고 목록에서 빠진다)
+const remainText = (iso) => {
+  if (!iso) return null
+  const ms = new Date(iso).getTime() - Date.now()
+  if (Number.isNaN(ms)) return null
+  if (ms <= 0) return '해제 대기'
+  const min = Math.floor(ms / 60000)
+  if (min < 60) return `${min}분 뒤 해제`
+  const h = Math.floor(min / 60)
+  return min % 60 === 0 ? `${h}시간 뒤 해제` : `${h}시간 ${min % 60}분 뒤 해제`
+}
+// 1시간 미만이면 곧 사라지는 구역이라 눈에 띄게 한다.
+const isExpiringSoon = (iso) => {
+  if (!iso) return false
+  const ms = new Date(iso).getTime() - Date.now()
+  return !Number.isNaN(ms) && ms > 0 && ms < 3600000
+}
+
 // 구역 반경 미니 썸네일 (실지도 대신 반경 비율 시각화 — 목업의 미니맵 자리)
 function ZoneThumb({ radius, level }) {
   const lv = LEVEL_STYLE[level] ?? LEVEL_STYLE.LOW
@@ -74,12 +94,21 @@ export default function AdminDangerZonePage({ user, onLogout }) {
     }
   }
 
+  // 상세 응답(PublicDangerZoneResponse)에는 신고 목록이 없다.
+  // 관리자 전용 /reports 를 따로 받아 합쳐야 모달에 신고가 나온다.
+  const loadDetail = async (zoneId) => {
+    const [zone, reports] = await Promise.all([
+      apiGet(`/danger-zones/${zoneId}`),
+      apiGet(`/danger-zones/${zoneId}/reports`),
+    ])
+    return { ...zone, reports: Array.isArray(reports) ? reports : [] }
+  }
+
   const openDetail = async (zone) => {
     setDetailLoading(true)
     setDetail({ dangerZoneId: zone.dangerZoneId, reports: [], _loading: true })
     try {
-      const data = await apiGet(`/danger-zones/${zone.dangerZoneId}`)
-      setDetail(data)
+      setDetail(await loadDetail(zone.dangerZoneId))
     } catch (e) {
       alert('상세 조회 실패: ' + e.message)
       setDetail(null)
@@ -90,8 +119,7 @@ export default function AdminDangerZonePage({ user, onLogout }) {
 
   const refreshDetail = async (zoneId) => {
     try {
-      const data = await apiGet(`/danger-zones/${zoneId}`)
-      setDetail(data)
+      setDetail(await loadDetail(zoneId))
     } catch { /* noop */ }
   }
 
@@ -129,6 +157,13 @@ export default function AdminDangerZonePage({ user, onLogout }) {
                 <span>반경: {detail.radius}m</span>
                 <span>신고수: {detail.reportCount ?? 0}건</span>
                 <span>중심: {detail.centerLatitude}, {detail.centerLongitude}</span>
+                {detail.expiredAt && (
+                  <span>자동 해제: {fmtDateTime(detail.expiredAt)}
+                    <b style={{ marginLeft: 5, color: isExpiringSoon(detail.expiredAt) ? 'var(--warning)' : 'var(--text-muted)' }}>
+                      ({remainText(detail.expiredAt)})
+                    </b>
+                  </span>
+                )}
               </div>
             )}
 
@@ -152,8 +187,8 @@ export default function AdminDangerZonePage({ user, onLogout }) {
                       {r.nearestCctv ? ` · 인근 CCTV: ${r.nearestCctv.cctvName ?? r.nearestCctv.cctvId}` : ''}
                     </div>
                     <div style={{ display: 'flex', gap: '6px' }}>
-                      <button style={s.btnOrange} onClick={() => setReportStatus(r, 'PROCESSING')}>처리중</button>
-                      <button style={s.btnMint} onClick={() => setReportStatus(r, 'RESOLVED')}>해결완료</button>
+                      <button style={s.btnOrange} onClick={() => setReportStatus(r, 'RECEIVED')} disabled={r.reportStatus === 'RECEIVED' || r.isFalseReport}>접수됨</button>
+                      <button style={s.btnMint} onClick={() => setReportStatus(r, 'RESOLVED')} disabled={r.reportStatus === 'RESOLVED' || r.isFalseReport}>해결완료</button>
                       <button style={s.btnRed} onClick={() => markFalse(r)} disabled={r.isFalseReport}>
                         {r.isFalseReport ? '허위신고됨' : '허위신고 처리'}
                       </button>
@@ -211,12 +246,19 @@ export default function AdminDangerZonePage({ user, onLogout }) {
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-.2px', color: 'var(--text-strong)' }}>위험구역 #{z.dangerZoneId}</div>
                     <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3, fontFamily: "'Inter',sans-serif" }}>
-                      {Number(z.centerLatitude).toFixed(4)}, {Number(z.centerLongitude).toFixed(4)}
+                      {Number(z.centerLatitude).toFixed(3)}, {Number(z.centerLongitude).toFixed(3)}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 7, flexWrap: 'wrap' }}>
                       <span style={{ ...s.badge, backgroundColor: lv.bg, color: lv.color }}>{lv.label}</span>
                       <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>반경 {z.radius ?? 0}m</span>
                       <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>신고 {z.reportCount ?? 0}</span>
+                      {/* 자동 해제까지 남은 시간 — 24시간이 지나면 목록에서 사라진다. */}
+                      {remainText(z.expiredAt) && (
+                        <span style={{
+                          fontSize: 11.5, fontWeight: 700,
+                          color: isExpiringSoon(z.expiredAt) ? 'var(--warning)' : 'var(--text-muted)',
+                        }}>{remainText(z.expiredAt)}</span>
+                      )}
                     </div>
                   </div>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6" /></svg>
@@ -272,13 +314,14 @@ export default function AdminDangerZonePage({ user, onLogout }) {
       <div style={s.card}>
         <table style={s.table}>
           <thead>
-            <tr>{['ID', '중심 좌표', '반경', '위험도', '신고수', '생성일', '관리'].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
+            <tr>{['ID', '중심 좌표', '반경', '위험도', '신고수', '생성일', '자동 해제', '관리'].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
           </thead>
           <tbody>
             {zones.length > 0 ? zones.map(z => (
               <tr key={z.dangerZoneId} style={s.tr}>
                 <td style={s.td}>#{z.dangerZoneId}</td>
-                <td style={s.td}>{Number(z.centerLatitude).toFixed(5)}, {Number(z.centerLongitude).toFixed(5)}</td>
+                {/* 구역 중심 좌표는 백엔드가 소수 3자리로 반올림해 내려준다 */}
+                <td style={s.td}>{Number(z.centerLatitude).toFixed(3)}, {Number(z.centerLongitude).toFixed(3)}</td>
                 <td style={s.td}>{z.radius}m</td>
                 <td style={s.td}>
                   <select
@@ -296,6 +339,18 @@ export default function AdminDangerZonePage({ user, onLogout }) {
                 </td>
                 <td style={s.td}>{z.reportCount ?? 0}건</td>
                 <td style={s.td}>{fmtDateTime(z.createdAt)}</td>
+                {/* 생성 24시간 뒤 자동 해제 — 시각과 남은 시간을 같이 보여준다. */}
+                <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
+                  {z.expiredAt ? (
+                    <>
+                      <div>{fmtDateTime(z.expiredAt)}</div>
+                      <div style={{
+                        fontSize: 11.5, fontWeight: 700, marginTop: 2,
+                        color: isExpiringSoon(z.expiredAt) ? 'var(--warning)' : 'var(--text-muted)',
+                      }}>{remainText(z.expiredAt)}</div>
+                    </>
+                  ) : '-'}
+                </td>
                 <td style={s.td}>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <button style={s.btnMint} onClick={() => openDetail(z)}>신고 보기</button>
@@ -304,7 +359,7 @@ export default function AdminDangerZonePage({ user, onLogout }) {
                 </td>
               </tr>
             )) : (
-              <tr><td colSpan={7} style={s.emptyRow}>{loading ? '불러오는 중…' : '활성 위험구역이 없습니다.'}</td></tr>
+              <tr><td colSpan={8} style={s.emptyRow}>{loading ? '불러오는 중…' : '활성 위험구역이 없습니다.'}</td></tr>
             )}
           </tbody>
         </table>

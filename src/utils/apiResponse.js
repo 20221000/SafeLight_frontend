@@ -1,6 +1,6 @@
 // 백엔드 응답 공용 파서.
 //
-// 백엔드는 { success, data, message } 봉투를 쓰지만, 401·403·500 에서는 본문이 아예 비어서 온다.
+// 백엔드는 { success, data, message, error } 봉투를 쓰지만, 401·403·500 에서는 본문이 아예 비어서 온다.
 // 그때 res.json() 을 그냥 부르면 'Unexpected end of JSON input' SyntaxError 가 터지면서
 // 진짜 원인(상태코드)을 가려버린다. 여기서 한 번 걸러 항상 봉투 모양으로 돌려준다.
 //
@@ -32,7 +32,14 @@ export async function readEnvelope(res) {
     if (!res.ok && json.success) {
       return { success: false, data: null, message: statusMessage(res.status), status: res.status }
     }
-    return { ...json, message: json.message || (res.ok ? '' : statusMessage(res.status)), status: res.status }
+    // 실패 응답은 message 가 null 이고 진짜 문구는 error.message 에 담겨 온다.
+    // 이걸 올려주지 않으면 모든 실패가 '요청에 실패했습니다 (HTTP 400)' 로 뭉개진다.
+    const errorText = json.error?.message
+    return {
+      ...json,
+      message: errorText || json.message || (res.ok ? '' : statusMessage(res.status)),
+      status: res.status,
+    }
   }
 
   // 본문이 비었거나 JSON 이 아닌 경우 (403 빈 응답, 프록시 HTML 에러 페이지 등)

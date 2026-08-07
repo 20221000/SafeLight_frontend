@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import AdminShell from '../components/layout/AdminShell'
 import { adminStyles as s, LEVEL_STYLE, STATUS_STYLE } from '../components/Admin/adminStyles'
 import { apiGet } from '../utils/adminApi'
-import { fetchAllReports, computeReportStats } from '../utils/reportsAggregate'
+import { fetchReportPage, fetchReportStats } from '../utils/reportsAggregate'
 import useIsMobile from '../hooks/useIsMobile'
 import Icon from '../components/Icon'
 
@@ -16,6 +16,8 @@ export default function AdminDashboardPage({ user, onLogout }) {
   const [users, setUsers] = useState([])
   const [zones, setZones] = useState([])
   const [reports, setReports] = useState([])
+  const [reportStats, setReportStats] = useState({ total: 0, received: 0, resolved: 0, falseCount: 0 })
+  const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -26,15 +28,21 @@ export default function AdminDashboardPage({ user, onLogout }) {
       setLoading(true)
       setError(null)
       try {
-        const [userList, zoneList, reportList] = await Promise.all([
+        // 게시글 통계는 백엔드가 집계해준다. 사용자 목록은 블랙리스트 수·최근 가입 표에 여전히 필요하다.
+        // 신고는 카운트(size=1 × 4)와 최근 5건만 받는다 — 대시보드에 그 이상은 쓰지 않는다.
+        const [userList, zoneList, recentPage, statsData, summaryData] = await Promise.all([
           apiGet('/users'),
           apiGet('/danger-zones'),
-          fetchAllReports().catch(() => []),
+          fetchReportPage({}, 0, 5).catch(() => null),
+          fetchReportStats().catch(() => null),
+          apiGet('/admin/dashboard/summary').catch(() => null),
         ])
         if (!alive) return
         setUsers(Array.isArray(userList) ? userList : [])
         setZones(Array.isArray(zoneList) ? zoneList : [])
-        setReports(Array.isArray(reportList) ? reportList : [])
+        setReports(recentPage?.reports ?? [])
+        if (statsData) setReportStats(statsData)
+        setSummary(summaryData)
       } catch (e) {
         if (alive) setError(e.message)
       } finally {
@@ -45,16 +53,22 @@ export default function AdminDashboardPage({ user, onLogout }) {
     return () => { alive = false }
   }, [user])
 
-  const reportStats = computeReportStats(reports)
   const blacklistCount = users.filter(u => u.isBlacklisted).length
   const recentUsers = [...users]
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
     .slice(0, 5)
 
+  // 요약 API가 막히면(권한·네트워크) 목록 길이로 대체한다.
+  const totalUsers = summary?.totalUsers ?? users.length
+  const totalPosts = summary?.totalPosts ?? 0
+  const todayPosts = summary?.todayPosts ?? 0
+
   const kpis = [
-    { icon: 'user',            label: '전체 사용자',   value: users.length, unit: '명', color: '#2563EB' },
+    { icon: 'user',            label: '전체 사용자',   value: totalUsers, unit: '명', color: '#2563EB' },
     { icon: 'alert-triangle',  label: '활성 위험구역', value: zones.length, unit: '개', color: '#F59E0B' },
     { icon: 'ban',             label: '블랙리스트',     value: blacklistCount, unit: '명', color: '#E11D48' },
+    { icon: 'file',            label: '전체 게시글',   value: totalPosts, unit: '개', color: '#10B981' },
+    { icon: 'edit',            label: '오늘 작성글',   value: todayPosts, unit: '개', color: '#8B5CF6' },
   ]
 
   // 모바일(AM1): KPI 2열 그리드 + 상태 분포 바 + 최근 긴급신고 카드.
@@ -63,13 +77,13 @@ export default function AdminDashboardPage({ user, onLogout }) {
   if (isMobile) {
     const mainKpis = [
       { key: 'total', label: '총 신고', value: reportStats.total, color: 'var(--blue-primary)' },
-      { key: 'processing', label: '처리중', value: reportStats.processing, color: 'var(--warning)' },
+      { key: 'received', label: '접수', value: reportStats.received, color: 'var(--warning)' },
       { key: 'resolved', label: '해결', value: reportStats.resolved, color: 'var(--safe)' },
       { key: 'falseCount', label: '오탐', value: reportStats.falseCount, color: 'var(--danger)' },
     ]
     const dist = [
+      { label: '접수', value: reportStats.received, color: 'var(--warning)' },
       { label: '해결', value: reportStats.resolved, color: 'var(--safe)' },
-      { label: '처리중', value: reportStats.processing, color: 'var(--warning)' },
       { label: '오탐', value: reportStats.falseCount, color: 'var(--danger)' },
     ]
     const distTotal = dist.reduce((sum, d) => sum + d.value, 0)
@@ -132,9 +146,11 @@ export default function AdminDashboardPage({ user, onLogout }) {
 
         {/* 사용자 · 위험구역 요약 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {miniStat('전체 사용자', users.length, '명', '/admin/users')}
+          {miniStat('전체 사용자', totalUsers, '명', '/admin/users')}
           {miniStat('활성 위험구역', zones.length, '개', '/admin/dangerzones')}
           {miniStat('블랙리스트', blacklistCount, '명', '/admin/users')}
+          {miniStat('전체 게시글', totalPosts, '개', '/admin/notices')}
+          {miniStat('오늘 작성글', todayPosts, '개', '/admin/notices')}
         </div>
 
         {/* 최근 긴급신고 */}
@@ -197,17 +213,16 @@ export default function AdminDashboardPage({ user, onLogout }) {
         ))}
       </div>
 
-      {/* 신고 처리 현황 (활성 위험구역 기준 집계) */}
+      {/* 신고 처리 현황 (비활성 구역 포함 전체 신고 기준) */}
       <div style={s.card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <span style={s.cardTitle}><Icon name="siren" size={16} color="var(--blue-primary)" /> 신고 처리 현황</span>
           <button style={s.btnGray} onClick={() => navigate('/admin/reports')}>신고 관리 →</button>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
           {[
             { key: 'total',      label: '전체 신고', value: reportStats.total,      color: '#2563EB' },
             { key: 'received',   label: '접수됨',    value: reportStats.received,   color: '#E11D48' },
-            { key: 'processing', label: '처리중',    value: reportStats.processing, color: '#F59E0B' },
             { key: 'resolved',   label: '해결완료',  value: reportStats.resolved,   color: '#10B981' },
             { key: 'falseCount', label: '허위신고',  value: reportStats.falseCount, color: '#64748B' },
           ].map(item => (

@@ -11,7 +11,8 @@ import { loadActiveRoute, clearActiveRoute } from '../utils/activeRoute'
 export default function MainPage({ user, onLogout }) {
   const location = useLocation()
   const { dangerZones, isLoading } = useSafetyData()
-  const [filters, setFilters] = useState({ cctv: true, streetLamp: true, safeZone: false })
+  // safeZone = 편의점(안전거점). streetLamp 은 아직 데이터가 없어 칩이 잠겨 있으므로 꺼둔다.
+  const [filters, setFilters] = useState({ cctv: true, streetLamp: false, safeZone: true })
 
   // 상단 검색(모든 페이지 공용) 또는 다른 페이지에서 넘어온 장소로 지도 이동
   const [mapTarget, setMapTarget] = useState(null)

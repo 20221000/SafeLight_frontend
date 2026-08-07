@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import AdminShell from '../components/layout/AdminShell'
 import ActionSheet from '../components/layout/ActionSheet'
+import RowMenu from '../components/Admin/RowMenu'
 import { adminStyles as s } from '../components/Admin/adminStyles'
 import { apiGet, apiSend } from '../utils/adminApi'
 import useIsMobile from '../hooks/useIsMobile'
@@ -68,6 +69,36 @@ export default function AdminUserPage({ user, onLogout }) {
     }
   }
 
+  // 백엔드는 관리자가 자기 자신의 역할·블랙리스트를 바꾸는 것을 막는다(SecurityException).
+  const isSelf = (u) => String(u.userId) === String(user?.userId)
+
+  const changeStatus = async (u, patch, confirmText) => {
+    if (confirmText && !window.confirm(confirmText)) return
+    try {
+      const res = await apiSend(`/admin/users/${u.userId}/status`, 'PATCH', patch)
+      // 역할 변경은 대상자가 다시 로그인해야 JWT에 반영된다.
+      if (res?.requiresRelogin) {
+        alert('역할을 변경했습니다. 해당 사용자가 다시 로그인해야 권한이 적용됩니다.')
+      }
+      await load()
+    } catch (e) {
+      alert('상태 변경 실패: ' + e.message)
+    }
+  }
+
+  const toggleBlacklist = (u) => changeStatus(
+    u,
+    { isBlacklisted: !u.isBlacklisted },
+    u.isBlacklisted
+      ? `'${u.nickname}' 의 블랙리스트를 해제할까요?`
+      : `'${u.nickname}' 을(를) 블랙리스트에 등록할까요?`,
+  )
+
+  const changeRole = (u, role) => {
+    if (role === u.role) return
+    changeStatus(u, { role }, `'${u.nickname}' 의 권한을 ${role} 로 변경할까요?`)
+  }
+
   const filtered = users.filter(u => {
     if (!search.trim()) return true
     const q = search.toLowerCase()
@@ -102,7 +133,7 @@ export default function AdminUserPage({ user, onLogout }) {
   )
 
   // 모바일(AM3): 테이블 대신 회원 카드 리스트 + 위험도 칩 + '관리' 액션 시트.
-  // 목업에는 '블랙 지정/해제'가 있으나 백엔드에 해당 엔드포인트가 없어(수정/삭제만 존재) 넣지 않았다.
+  // 블랙 지정/해제와 권한 변경은 PATCH /admin/users/{id}/status 로 처리한다(자기 자신은 백엔드가 막는다).
   if (isMobile) {
     const isRisky = u => (u.falseReportCount ?? 0) >= 3
     const chips = [
@@ -221,6 +252,18 @@ export default function AdminUserPage({ user, onLogout }) {
             subtitle={`@${sheetUser.username} · #${sheetUser.userId}`}
             actions={[
               { label: '정보 수정', tone: 'primary', onClick: () => openEdit(sheetUser) },
+              {
+                label: sheetUser.isBlacklisted ? '블랙리스트 해제' : '블랙리스트 지정',
+                tone: sheetUser.isBlacklisted ? 'safe' : 'danger',
+                disabled: isSelf(sheetUser),
+                onClick: () => toggleBlacklist(sheetUser),
+              },
+              {
+                label: sheetUser.role === 'ADMIN' ? '일반 사용자로 변경' : '관리자로 변경',
+                tone: 'default',
+                disabled: isSelf(sheetUser),
+                onClick: () => changeRole(sheetUser, sheetUser.role === 'ADMIN' ? 'USER' : 'ADMIN'),
+              },
               { label: '사용자 삭제', tone: 'danger', disabled: sheetUser.role === 'ADMIN', onClick: () => handleDelete(sheetUser) },
             ]}
             onClose={() => setSheetUser(null)}
@@ -230,6 +273,34 @@ export default function AdminUserPage({ user, onLogout }) {
       </AdminShell>
     )
   }
+
+  // 데스크탑 '관리' 열 드롭다운 항목. 모바일 액션 시트와 같은 4가지를 같은 순서로 둔다 —
+  // 예전 데스크탑에는 권한 변경이 이 묶음에 없어서(윗줄 select 로만 됐다) 두 화면이 서로 달랐다.
+  // 잠기는 항목에는 사유를 달아 둔다. 회색으로 죽어 있기만 하면 왜 안 되는지 알 길이 없다.
+  const userActions = (u) => [
+    { label: '정보 수정', tone: 'primary', onClick: () => openEdit(u) },
+    {
+      label: u.isBlacklisted ? '블랙리스트 해제' : '블랙리스트 지정',
+      tone: u.isBlacklisted ? 'safe' : 'danger',
+      disabled: isSelf(u),
+      caption: isSelf(u) ? '본인 계정에는 쓸 수 없습니다' : undefined,
+      onClick: () => toggleBlacklist(u),
+    },
+    {
+      label: u.role === 'ADMIN' ? '일반 사용자로 변경' : '관리자로 변경',
+      tone: 'default',
+      disabled: isSelf(u),
+      caption: isSelf(u) ? '본인 권한은 바꿀 수 없습니다' : undefined,
+      onClick: () => changeRole(u, u.role === 'ADMIN' ? 'USER' : 'ADMIN'),
+    },
+    {
+      label: '사용자 삭제',
+      tone: 'danger',
+      disabled: u.role === 'ADMIN',
+      caption: u.role === 'ADMIN' ? '먼저 일반 사용자로 내려야 합니다' : undefined,
+      onClick: () => handleDelete(u),
+    },
+  ]
 
   return (
     <AdminShell user={user} onLogout={onLogout} active="users" title="사용자 관리" subtitle="가입 사용자와 블랙리스트를 관리합니다">
@@ -261,10 +332,14 @@ export default function AdminUserPage({ user, onLogout }) {
                 <td style={{ ...s.td, color: (u.falseReportCount ?? 0) >= 2 ? 'var(--danger)' : 'var(--text-strong)', fontWeight: (u.falseReportCount ?? 0) >= 2 ? '700' : '400' }}>
                   {u.falseReportCount ?? 0}회
                 </td>
+                {/* 권한은 '상태'와 같은 읽기 배지다. 바꾸는 건 '관리' 메뉴 한 곳으로 모았다 —
+                    전에는 여기 select 로도, 아래 버튼으로도 바꿀 수 있어 같은 일을 하는 입구가 둘이었다. */}
                 <td style={s.td}>
-                  <span style={{ ...s.badge, background: u.role === 'ADMIN' ? 'var(--blue-tint)' : 'rgba(100,116,139,.12)', color: u.role === 'ADMIN' ? 'var(--blue-primary)' : 'var(--text-muted)' }}>
-                    {u.role}
-                  </span>
+                  <span style={{
+                    ...s.badge,
+                    background: u.role === 'ADMIN' ? 'var(--blue-tint)' : 'rgba(100,116,139,.12)',
+                    color: u.role === 'ADMIN' ? 'var(--blue-primary)' : 'var(--text-muted)',
+                  }}>{u.role}</span>
                 </td>
                 <td style={s.td}>
                   <span style={{ ...s.badge, background: u.isBlacklisted ? 'rgba(225,29,72,.10)' : 'rgba(16,185,129,.13)', color: u.isBlacklisted ? 'var(--danger)' : 'var(--safe)' }}>
@@ -273,10 +348,7 @@ export default function AdminUserPage({ user, onLogout }) {
                 </td>
                 <td style={s.td}>{fmtDate(u.createdAt)}</td>
                 <td style={s.td}>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button style={s.btnMint} onClick={() => openEdit(u)}>수정</button>
-                    <button style={s.btnRed} onClick={() => handleDelete(u)} disabled={u.role === 'ADMIN'}>삭제</button>
-                  </div>
+                  <RowMenu label="관리" width={216} actions={userActions(u)} />
                 </td>
               </tr>
             )) : (

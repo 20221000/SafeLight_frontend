@@ -8,6 +8,7 @@ import CommunityPage from './pages/CommunityPage'
 import MyInfoPage from './pages/MyInfoPage'
 import FriendsPage from './pages/FriendsPage'
 import MessagesPage from './pages/MessagesPage'
+import NotificationsPage from './pages/NotificationsPage'
 import PostDetailPage from './pages/PostDetailPage'
 import PostWritePage from './pages/PostWritePage'
 import AdminDashboardPage from './pages/AdminDashboardPage'
@@ -125,6 +126,7 @@ function AppRoutes() {
         <Route path="/myinfo" element={<MyInfoPage user={user} onLogout={handleLogout} onUpdateUser={handleUpdateUser} />} />
         <Route path="/myinfo/friends" element={<FriendsPage user={user} onLogout={handleLogout} />} />
         <Route path="/myinfo/messages" element={<MessagesPage user={user} onLogout={handleLogout} />} />
+        <Route path="/myinfo/notifications" element={<NotificationsPage user={user} onLogout={handleLogout} />} />
         <Route path="/admin" element={<AdminDashboardPage user={user} onLogout={handleLogout} />} />
         <Route path="/admin/users" element={<AdminUserPage user={user} onLogout={handleLogout} />} />
         <Route path="/admin/reports" element={<AdminReportPage user={user} onLogout={handleLogout} />} />

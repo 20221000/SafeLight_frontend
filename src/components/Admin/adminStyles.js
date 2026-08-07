@@ -1,7 +1,8 @@
 // 관리자 페이지 공용 스타일 (White & Blue) — 값은 App.css CSS 변수 참조
 export const adminStyles = {
   // KPI / 카드
-  kpiRow: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 },
+  // 카드 개수가 늘어도 좁아지지 않게 최소 폭을 두고 접히게 한다.
+  kpiRow: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 16 },
   kpiCard: { background: 'var(--surface)', borderRadius: 16, padding: 18, border: '1px solid var(--border)' },
   kpiIcon: { width: 52, height: 52, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   kpiLabel: { color: 'var(--text-muted)', fontSize: 12.5, fontWeight: 600, marginBottom: 4 },
@@ -50,8 +51,8 @@ export const LEVEL_STYLE = {
 
 // 긴급신고 처리 상태 배지
 export const STATUS_STYLE = {
+  // 백엔드 EmergencyReportStatus 는 RECEIVED/RESOLVED/FALSE 3개뿐이다. PROCESSING 은 존재하지 않는다.
   RECEIVED:   { label: '접수',   bg: 'var(--blue-tint)',      color: 'var(--blue-primary)' },
-  PROCESSING: { label: '처리중', bg: 'rgba(245,158,11,.13)',  color: 'var(--warning)' },
   RESOLVED:   { label: '해결',   bg: 'rgba(16,185,129,.13)',  color: 'var(--safe)' },
   FALSE:      { label: '오탐',   bg: 'rgba(100,116,139,.12)', color: 'var(--text-muted)' },
 }

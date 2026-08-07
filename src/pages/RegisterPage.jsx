@@ -11,7 +11,7 @@ const FIELDS = [
   { name: 'username', label: '아이디', type: 'text', placeholder: '영문, 숫자 조합', icon: userIcon },
   { name: 'nickname', label: '닉네임', type: 'text', placeholder: '사용할 닉네임', icon: tagIcon },
   { name: 'email', label: '이메일', type: 'email', placeholder: 'example@email.com', icon: mailIcon },
-  { name: 'password', label: '비밀번호', type: 'password', placeholder: '6자 이상', icon: lockIcon },
+  { name: 'password', label: '비밀번호', type: 'password', placeholder: '8자 이상', icon: lockIcon },
   { name: 'passwordConfirm', label: '비밀번호 확인', type: 'password', placeholder: '비밀번호 재입력', icon: lockIcon },
 ]
 
@@ -26,7 +26,9 @@ export default function RegisterPage({ onGoLogin, modal = false, onClose }) {
   const validate = () => {
     if (!form.username || !form.nickname || !form.email || !form.password) return '모든 항목을 입력해주세요.'
     if (form.password !== form.passwordConfirm) return '비밀번호가 일치하지 않습니다.'
-    if (form.password.length < 6) return '비밀번호는 6자 이상이어야 합니다.'
+    // 백엔드 @Size(min = 8, max = 72) 와 맞춰둔다. 어긋나면 서버가 400으로 되돌린다.
+    if (form.password.length < 8) return '비밀번호는 8자 이상이어야 합니다.'
+    if (form.password.length > 72) return '비밀번호는 72자 이하여야 합니다.'
     return ''
   }
 

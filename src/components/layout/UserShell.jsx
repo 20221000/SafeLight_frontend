@@ -6,6 +6,7 @@ import TopBar from './TopBar'
 import IconRail from './IconRail'
 import MobileShell from './MobileShell'
 import useIsMobile from '../../hooks/useIsMobile'
+import useUnreadNotifications from '../../hooks/useUnreadNotifications'
 
 export default function UserShell({
   user,
@@ -19,6 +20,9 @@ export default function UserShell({
 }) {
   const isMobile = useIsMobile()
   const [dark, setDark] = useState(() => localStorage.getItem('ls-night') === '1')
+  // 벨 뱃지는 데스크탑·모바일 헤더가 같이 쓰므로 여기서 한 번만 조회한다.
+  // 긴급과 쪽지를 합치지 않고 그대로 넘긴다 — 벨이 둘을 다른 색으로 그린다.
+  const { emergency: unreadEmergency, message: unreadMessages } = useUnreadNotifications(user)
 
   const toggleDark = () => {
     setDark(prev => {
@@ -41,6 +45,8 @@ export default function UserShell({
           scroll={scroll}
           contentBg={contentBg}
           onPickPlace={onPickPlace}
+          unreadEmergency={unreadEmergency}
+          unreadMessages={unreadMessages}
         >
           {children}
         </MobileShell>
@@ -61,6 +67,8 @@ export default function UserShell({
         dark={dark}
         onToggleDark={toggleDark}
         onPickPlace={onPickPlace}
+        unreadEmergency={unreadEmergency}
+        unreadMessages={unreadMessages}
       />
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <IconRail active={active} user={user} onLogout={onLogout} />

@@ -4,6 +4,7 @@ import { useRef, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PlaceSearchBox from './PlaceSearchBox'
 import MobileTabBar from './MobileTabBar'
+import NotificationBell from './NotificationBell'
 import BottomSheet, { SHEET_PEEK } from './BottomSheet'
 
 // 로고·검색창·야간모드를 같은 높이로 맞춰 헤더 리듬을 통일한다(PlaceSearchBox compact도 동일값).
@@ -16,8 +17,9 @@ const iconBtn = (extra = {}) => ({
   ...extra,
 })
 
-// user·onLogout은 UserShell이 계속 넘기지만 여기선 쓰지 않는다(로그인/로그아웃은 MyInfoPage 담당).
+// onLogout은 UserShell이 계속 넘기지만 여기선 쓰지 않는다(로그인/로그아웃은 MyInfoPage 담당).
 export default function MobileShell({
+  user,
   active,
   children,
   dark,
@@ -26,6 +28,8 @@ export default function MobileShell({
   scroll = true,
   contentBg = 'var(--bg)',
   onPickPlace,
+  unreadEmergency = 0,
+  unreadMessages = 0,
 }) {
   const navigate = useNavigate()
   const contentRef = useRef(null)
@@ -57,6 +61,7 @@ export default function MobileShell({
         </div>
 
         {/* 관리자 콘솔 · 로그인/로그아웃은 좁은 헤더에서 검색창을 눌러 MyInfoPage 헤더로 옮겼다. */}
+        {user && <NotificationBell emergency={unreadEmergency} message={unreadMessages} size={CTRL} />}
         <button
           onClick={onToggleDark}
           title="야간 모드"

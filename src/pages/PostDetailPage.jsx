@@ -16,6 +16,32 @@ function Avatar({ name, size = 34 }) {
   return <div style={{ width: size, height: size, borderRadius: '50%', background: 'var(--blue-tint)', color: 'var(--blue-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.4, fontWeight: 700, flexShrink: 0 }}>{(name || '?').charAt(0)}</div>
 }
 
+// 첨부파일 종류 — 백엔드가 주는 contentType(MIME)으로 판별한다.
+// 파일명 확장자는 사용자가 마음대로 바꿀 수 있어 서버가 기록한 MIME 이 더 믿을 만하다.
+// 아이콘 세트에 파일 종류별 그림이 없어 색 있는 짧은 라벨로 구분한다.
+const FILE_KINDS = [
+  { label: '이미지', color: '#0EA5E9', icon: 'camera', match: t => t.startsWith('image/') },
+  { label: '영상',   color: '#8B5CF6', icon: 'play',   match: t => t.startsWith('video/') },
+  { label: 'PDF',    color: '#E11D48', icon: 'file',   match: t => t === 'application/pdf' },
+  { label: '압축',   color: '#F59E0B', icon: 'file',   match: t => /zip|compressed|x-tar|gzip|x-7z|rar/.test(t) },
+  { label: '표',     color: '#10B981', icon: 'file',   match: t => /excel|spreadsheet|csv/.test(t) },
+  { label: '문서',   color: '#2563EB', icon: 'file',   match: t => /word|hwp|opendocument|presentation|powerpoint|rtf/.test(t) },
+  { label: '텍스트', color: '#64748B', icon: 'file',   match: t => t.startsWith('text/') },
+]
+const FILE_KIND_DEFAULT = { label: '파일', color: 'var(--text-muted)', icon: 'file' }
+const fileKind = (contentType) => {
+  const t = String(contentType ?? '').toLowerCase()
+  if (!t) return FILE_KIND_DEFAULT
+  return FILE_KINDS.find(k => k.match(t)) ?? FILE_KIND_DEFAULT
+}
+// 1KB 미만 파일이 '0.0KB' 로 보이지 않게 단위를 올린다
+const fileSize = (bytes) => {
+  if (bytes == null) return ''
+  if (bytes < 1024) return `${bytes}B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`
+}
+
 // minWidth:0 필수 — flex 기본 min-width:auto 면 입력칸이 자기 고유폭 아래로 줄지 못해
 // 좁은 화면에서 '등록' 버튼이 화면 밖으로 밀려난다.
 const commentInputStyle = { flex: 1, minWidth: 0, height: 42, padding: '0 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 11, fontSize: 13.5, color: 'var(--text-strong)', outline: 'none', fontFamily: 'inherit' }
@@ -161,7 +187,8 @@ export default function PostDetailPage({ user, onLogout }) {
     const res = await fetch(`/posts/${postId}/comments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ content: commentInput, parentId: null, userId: user.userId }),
+      // 작성자는 백엔드가 JWT에서 읽는다. CommentCreateRequest 는 (content, parentId) 뿐이다.
+      body: JSON.stringify({ content: commentInput, parentId: null }),
     })
     const json = await readEnvelope(res)
     if (json.success) { setCommentInput(''); fetchPost() }
@@ -175,7 +202,7 @@ export default function PostDetailPage({ user, onLogout }) {
     const res = await fetch(`/posts/${postId}/comments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ content: replyInput, parentId, userId: user.userId }),
+      body: JSON.stringify({ content: replyInput, parentId }),
     })
     const json = await readEnvelope(res)
     if (json.success) { setReplyInput(''); setReplyInputId(null); fetchPost() }
@@ -294,13 +321,22 @@ export default function PostDetailPage({ user, onLogout }) {
             {post.attachments && post.attachments.length > 0 && (
               <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
                 <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}><Icon name="paperclip" size={15} color="var(--blue-primary)" /> 첨부파일</div>
-                {post.attachments.map(file => (
+                {post.attachments.map(file => {
+                  const kind = fileKind(file.contentType)
+                  return (
                   <div key={file.attachmentId} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                     {/* 다운로드 링크 — 삭제 버튼은 이 <a> 밖 형제로 둔다(안에 넣으면 삭제 클릭이 다운로드까지 유발). */}
                     <a href={`/posts/attachments/${file.attachmentId}`} download={file.originalFilename} onClick={e => downloadAttachment(e, file)}
+                      title={file.contentType || undefined}
                       style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'var(--text-muted)' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}><Icon name="file" size={14} /> <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.originalFilename}</span></span>
-                      <span style={{ fontSize: 11, flexShrink: 0, marginLeft: 8 }}>{file.size ? `${(file.size / 1024).toFixed(1)}KB` : ''}</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                        <span style={{ color: kind.color, display: 'flex', flexShrink: 0 }}><Icon name={kind.icon} size={14} /></span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.originalFilename}</span>
+                      </span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0, marginLeft: 8 }}>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 6, color: kind.color, background: 'var(--surface)', border: `1px solid ${kind.color}33` }}>{kind.label}</span>
+                        <span style={{ fontSize: 11 }}>{fileSize(file.size)}</span>
+                      </span>
                     </a>
                     {user && user.userId === post.userId && (
                       <button onClick={() => handleAttachmentDelete(file.attachmentId)} title="첨부파일 삭제" aria-label="첨부파일 삭제"
@@ -309,7 +345,8 @@ export default function PostDetailPage({ user, onLogout }) {
                       </button>
                     )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
 

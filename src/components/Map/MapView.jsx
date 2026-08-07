@@ -1,28 +1,83 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import useIsMobile from '../../hooks/useIsMobile'
 import Icon from '../Icon'
 import { iconSvg } from '../iconSvg'
+import { LAYER_COLOR, FACILITY_MAX_LEVEL, dotContent } from './layerStyle'
 import { readEnvelope } from '../../utils/apiResponse'
 
-async function fetchMarkerData() {
+async function fetchCctvData() {
   try {
     const res = await fetch('/cctvs')
     const json = await readEnvelope(res)
     if (!json.success || !json.data) {
-      console.warn('마커 데이터 조회 실패:', json.message)
-      return { cctv: [], streetLamp: [], safeZone: [] }
+      console.warn('CCTV 조회 실패:', json.message)
+      return []
     }
-
-    const cctv = json.data.map(item => ({
+    return json.data.map(item => ({
       lat: item.latitude,
       lng: item.longitude,
       name: item.cctvName,
     }))
-
-    return { cctv, streetLamp: [], safeZone: [] }
   } catch (err) {
-    console.error('마커 데이터 조회 실패:', err)
-    return { cctv: [], streetLamp: [], safeZone: [] }
+    console.error('CCTV 조회 실패:', err)
+    return []
+  }
+}
+
+// 편의점(안전거점) — 백엔드에는 편의점 단독 엔드포인트가 없다.
+// KakaoLocalService.getConvenienceStores 는 POST /routes 안에서 '경로 50m 반경'으로만 쓰여
+// '지금 보이는 지도 영역' 질문에는 답할 수 없다. 그래서 백엔드가 쓰는 것과 같은 소스
+// (카카오 로컬, category_group_code=CS2)를 지도 SDK 의 services 라이브러리로 직접 조회한다.
+const STORE_CATEGORY = 'CS2'
+// 카카오 카테고리 검색은 한 번의 요청에서 15곳 × 3페이지 = 45곳까지만 준다(우리가 정한 한도가 아니다).
+// 45곳이 꽉 찼다는 건 실제로는 더 있다는 뜻이므로, 그 영역만 4등분해 다시 검색한다.
+// 꽉 차지 않은 영역은 더 쪼개지 않으므로 한산한 동네에서는 요청 수가 그대로다.
+const STORE_PAGE_CAP = 45
+const STORE_SPLIT_DEPTH = 2   // 4²= 최대 16조각. 여기까지 쪼개도 넘치면 그 사실을 문구로 알린다.
+
+// 영역을 4분면으로 나눈다.
+const splitBounds = (bounds) => {
+  const { LatLng, LatLngBounds } = window.kakao.maps
+  const sw = bounds.getSouthWest(), ne = bounds.getNorthEast()
+  const midLat = (sw.getLat() + ne.getLat()) / 2
+  const midLng = (sw.getLng() + ne.getLng()) / 2
+  return [
+    new LatLngBounds(sw, new LatLng(midLat, midLng)),
+    new LatLngBounds(new LatLng(sw.getLat(), midLng), new LatLng(midLat, ne.getLng())),
+    new LatLngBounds(new LatLng(midLat, sw.getLng()), new LatLng(ne.getLat(), midLng)),
+    new LatLngBounds(new LatLng(midLat, midLng), ne),
+  ]
+}
+
+// 한 영역을 끝까지(최대 3페이지) 훑는다.
+const searchArea = (bounds) => new Promise(resolve => {
+  const found = []
+  const handle = (data, status, pagination) => {
+    const { Status } = window.kakao.maps.services
+    if (status === Status.ERROR) { resolve({ places: found, capped: false, failed: true }); return }
+    if (status === Status.OK) {
+      found.push(...data)
+      if (pagination?.hasNextPage) { pagination.nextPage(); return }
+    }
+    resolve({ places: found, capped: found.length >= STORE_PAGE_CAP, failed: false })
+  }
+  new window.kakao.maps.services.Places().categorySearch(STORE_CATEGORY, handle, { bounds })
+})
+
+// 45곳에서 잘린 영역만 4등분해 재귀로 파고든다. 마지막에 id 로 중복을 걷어낸다 —
+// 이웃한 조각은 경계를 공유하므로 경계 위의 편의점이 양쪽 결과에 다 들어온다.
+const collectStores = async (bounds, depth = 0) => {
+  const area = await searchArea(bounds)
+  if (area.failed) return { places: [], capped: false, failed: true }
+  if (!area.capped || depth >= STORE_SPLIT_DEPTH) return { ...area, failed: false }
+
+  const parts = await Promise.all(splitBounds(bounds).map(b => collectStores(b, depth + 1)))
+  const byId = new Map()
+  parts.forEach(p => p.places.forEach(place => byId.set(place.id, place)))
+  return {
+    places: [...byId.values()],
+    capped: parts.some(p => p.capped),
+    failed: parts.every(p => p.failed),
   }
 }
 
@@ -32,8 +87,12 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
   const CHIP_H = isMobile ? 26 : 34
   const mapRef = useRef(null)
   const mapInstance = useRef(null)
-  const clustererRef = useRef(null)
-  const allDataRef = useRef({ cctv: [], streetLamp: [], safeZone: [] })
+  const cctvDataRef = useRef([])
+  const cctvOverlaysRef = useRef([])
+  const storeOverlaysRef = useRef([])
+  const storeReqRef = useRef(0)          // 늦게 도착한 이전 검색 결과를 버리기 위한 순번
+  const [cctvNotice, setCctvNotice] = useState('')
+  const [storeNotice, setStoreNotice] = useState('')
   const locationMarkerRef = useRef(null)
   const dangerZoneOverlaysRef = useRef([])
   const routePolylinesRef = useRef([])
@@ -41,27 +100,106 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
   const searchMarkerRef = useRef(null)
   const searchTargetRef = useRef(searchTarget) // 초기 지오로케이션이 검색 위치를 덮어쓰지 않도록 추적
 
-  // 뷰포트 내 CCTV 마커 렌더링
+  // 지도 인스턴스가 준비됐는지. 카카오 SDK 가 늦게 뜨면 initMap 이 setInterval 로 미뤄지는데,
+  // 그 사이 경로·위험구역·검색 위치 effect 가 먼저 돌면서 mapInstance 가 없어 조용히 빠져나가
+  // 다시 그릴 계기가 영영 없었다. 준비되면 이 값이 바뀌면서 해당 effect 들이 다시 돈다.
+  const [mapReady, setMapReady] = useState(false)
+
+  // 경로 안내 중에는 초기 위치 조회 결과로 지도를 되돌리면 안 된다 —
+  // 안내를 시작하면 출발·도착이 잠깐 보였다가 내 위치로 튕겨 나갔다.
+  const routeStateRef = useRef(routeState)
+  routeStateRef.current = routeState
+
+  // 지도 'idle' 리스너는 초기화 때 한 번만 등록되므로 filters 를 클로저로 잡으면 첫 값에 영원히 묶인다.
+  // (그래서 CCTV 를 꺼도 지도를 움직이는 순간 마커가 되살아났다.) 항상 최신 값을 ref 로 읽는다.
+  const filtersRef = useRef(filters)
+  filtersRef.current = filters
+
+  const clearCctv = useCallback(() => {
+    cctvOverlaysRef.current.forEach(o => o.setMap(null))
+    cctvOverlaysRef.current = []
+  }, [])
+
+  // 뷰포트 내 CCTV 점 렌더링. 필터가 꺼져 있으면 지우기만 한다 —
+  // 켬/끔 판단을 한곳에 모아둬야 호출부마다 조건을 빠뜨리지 않는다.
   const renderCctvInBounds = useCallback(() => {
-    if (!mapInstance.current || !clustererRef.current) return
+    const map = mapInstance.current
+    if (!map || !window.kakao) return
 
-    const bounds = mapInstance.current.getBounds()
-    const data = allDataRef.current
+    clearCctv()
+    if (!filtersRef.current?.cctv) { setCctvNotice(''); return }
+    if (map.getLevel() > FACILITY_MAX_LEVEL) {
+      setCctvNotice('지도를 확대하면 주변 CCTV가 표시됩니다')
+      return
+    }
 
-    clustererRef.current.clear()
-
-    const inBounds = data.cctv.filter(pos =>
+    const bounds = map.getBounds()
+    const inBounds = cctvDataRef.current.filter(pos =>
       bounds.contain(new window.kakao.maps.LatLng(pos.lat, pos.lng))
     )
 
-    const markers = inBounds.map(pos =>
-      new window.kakao.maps.Marker({
+    inBounds.forEach(pos => {
+      const overlay = new window.kakao.maps.CustomOverlay({
         position: new window.kakao.maps.LatLng(pos.lat, pos.lng),
+        content: dotContent(LAYER_COLOR.cctv), yAnchor: 0.5, xAnchor: 0.5, zIndex: 2,
       })
-    )
+      overlay.setMap(map)
+      cctvOverlaysRef.current.push(overlay)
+    })
 
-    clustererRef.current.addMarkers(markers)
+    setCctvNotice(inBounds.length === 0 ? '이 지역에는 CCTV가 없습니다' : `CCTV ${inBounds.length}대`)
+  }, [clearCctv])
+
+  const clearStores = useCallback(() => {
+    storeOverlaysRef.current.forEach(o => o.setMap(null))
+    storeOverlaysRef.current = []
   }, [])
+
+  // 편의점(안전거점) 마커 — 지도 영역이 바뀔 때마다 다시 조회한다.
+  const renderStoresInBounds = useCallback(() => {
+    const map = mapInstance.current
+    if (!map || !window.kakao?.maps?.services) return
+
+    // 이 시점 이후 도착하는 이전 요청의 콜백은 무시된다
+    const reqId = ++storeReqRef.current
+    clearStores()
+
+    if (!filtersRef.current?.safeZone) { setStoreNotice(''); return }
+    if (map.getLevel() > FACILITY_MAX_LEVEL) {
+      setStoreNotice('지도를 확대하면 주변 편의점이 표시됩니다')
+      return
+    }
+
+    const showName = map.getLevel() <= 3   // 좁게 볼 때만 상호를 띄운다(넓으면 라벨끼리 겹친다)
+
+    collectStores(map.getBounds()).then(({ places, capped, failed }) => {
+      if (reqId !== storeReqRef.current) return
+      if (failed) { setStoreNotice('편의점 정보를 불러오지 못했습니다'); return }
+
+      places.forEach(place => {
+        const content = showName
+          ? `<div style="display:flex;align-items:center;gap:4px;background:${LAYER_COLOR.store};color:#fff;
+                padding:3px 8px;border-radius:12px;font-size:11px;font-weight:700;white-space:nowrap;
+                border:1.5px solid #fff;box-shadow:0 2px 6px rgba(15,23,42,.28);">
+               ${iconSvg('store', { size: 11, color: '#fff' })}${place.place_name}
+             </div>`
+          : dotContent(LAYER_COLOR.store)
+        const overlay = new window.kakao.maps.CustomOverlay({
+          position: new window.kakao.maps.LatLng(Number(place.y), Number(place.x)),
+          content, yAnchor: 0.5, xAnchor: 0.5, zIndex: 3,
+        })
+        overlay.setMap(map)
+        storeOverlaysRef.current.push(overlay)
+      })
+
+      // 끝까지 쪼개고도 넘쳤다면 그 사실을 숨기지 않는다 — 실제로는 더 있다.
+      setStoreNotice(
+        places.length === 0 ? '이 지역에는 편의점이 없습니다'
+          : capped ? `편의점 ${places.length}곳 이상 · 확대하면 더 정확합니다`
+            : `편의점 ${places.length}곳`
+      )
+    })
+  }, [clearStores])
 
   // 위험구역 그리기
   const drawDangerZones = useCallback((zones) => {
@@ -178,7 +316,13 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
 
     const bounds = new window.kakao.maps.LatLngBounds()
     linePath.forEach(latlng => bounds.extend(latlng))
-    mapInstance.current.setBounds(bounds)
+    // 모바일은 아래쪽을 '내 주변 안전 현황' 시트가 덮는다. 그만큼 여백을 주지 않으면
+    // 도착 마커가 시트 뒤로 숨는다(경로 화면은 이미 같은 보정을 하고 있다).
+    // --ls-sheet-peek 은 셸 요소에 걸려 있어 documentElement 가 아니라 지도 컨테이너에서 읽는다.
+    const peek = mapRef.current
+      ? parseInt(getComputedStyle(mapRef.current).getPropertyValue('--ls-sheet-peek'), 10) || 0
+      : 0
+    mapInstance.current.setBounds(bounds, 32, 24, 32 + peek, 24)
   }, [])
 
   // 지도 초기화
@@ -189,46 +333,36 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
       const container = mapRef.current
       const options = {
         center: new window.kakao.maps.LatLng(37.4979, 127.0276),
-        level: 5,
+        // FACILITY_MAX_LEVEL 보다 넓게 시작하면 지도를 열자마자 아무 점도 안 보인다.
+        level: FACILITY_MAX_LEVEL,
       }
       mapInstance.current = new window.kakao.maps.Map(container, options)
 
-      clustererRef.current = new window.kakao.maps.MarkerClusterer({
-        map: mapInstance.current,
-        averageCenter: true,
-        minLevel: 5,
-        disableClickZoom: false,
-        styles: [{
-          width: '44px', height: '44px',
-          background: 'rgba(0,230,118,0.9)',
-          borderRadius: '50%',
-          color: '#000',
-          textAlign: 'center',
-          lineHeight: '44px',
-          fontSize: '13px',
-          fontWeight: '700',
-          border: '2px solid #fff',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-        }],
-      })
-
-      fetchMarkerData().then(data => {
-        allDataRef.current = data
-        if (filters.cctv) renderCctvInBounds()
+      // 편의점은 아래 mapReady effect 가 곧바로 한 번 그린다 — 여기서 또 부르면 카카오 검색이 두 번 나간다.
+      fetchCctvData().then(data => {
+        cctvDataRef.current = data
+        renderCctvInBounds()
       })
 
       window.kakao.maps.event.addListener(mapInstance.current, 'idle', () => {
-        if (filters.cctv) renderCctvInBounds()
+        renderCctvInBounds()
+        renderStoresInBounds()
       })
+
+      setMapReady(true)
 
       navigator.geolocation?.getCurrentPosition(
         (pos) => {
           const { latitude, longitude } = pos.coords
           const latlng = new window.kakao.maps.LatLng(latitude, longitude)
-          // 검색으로 진입한 경우(다른 페이지에서 넘어옴)엔 현재 위치로 되돌리지 않는다
-          if (!searchTargetRef.current) {
+          // 위치 조회는 느리게 끝나므로, 그 사이 사용자가 보려던 화면을 덮어쓰지 않게 막는다.
+          // - 검색으로 진입(다른 페이지에서 장소를 골라 넘어옴)
+          // - 경로 안내 중(북마크·경로 화면에서 넘어옴) — 안 막으면 출발·도착이 잠깐 보였다가
+          //   내 위치로 튕겨 나간다. 마커는 그대로 찍되 화면만 건드리지 않는다.
+          const keepView = searchTargetRef.current || routeStateRef.current?.routePath?.length
+          if (!keepView) {
             mapInstance.current.setCenter(latlng)
-            mapInstance.current.setLevel(5)
+            mapInstance.current.setLevel(FACILITY_MAX_LEVEL)
           }
 
           const content = `
@@ -277,28 +411,23 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
       }, 300)
       return () => clearInterval(check)
     }
-  }, [renderCctvInBounds])
+  }, [renderCctvInBounds, renderStoresInBounds])
 
-  // 필터 변경 시
+  // 필터 변경 시 (각 render 함수가 켬/끔을 알아서 처리한다)
   useEffect(() => {
-    if (!clustererRef.current) return
-    if (filters.cctv) {
-      renderCctvInBounds()
-    } else {
-      clustererRef.current.clear()
-    }
-  }, [filters, renderCctvInBounds])
+    renderCctvInBounds()
+    renderStoresInBounds()
+  }, [mapReady, filters, renderCctvInBounds, renderStoresInBounds])
 
   // 위험구역 변경 시
   useEffect(() => {
-    if (mapInstance.current) {
-      drawDangerZones(dangerZones)
-    }
-  }, [dangerZones, drawDangerZones])
+    if (!mapReady) return
+    drawDangerZones(dangerZones)
+  }, [mapReady, dangerZones, drawDangerZones])
 
   // 경로 안내에서 넘어온 경우. 안내가 취소되면(routeState === null) 그려둔 선과 마커를 지운다.
   useEffect(() => {
-    if (!mapInstance.current) return
+    if (!mapReady) return
     if (routeState?.routePath) {
       drawRouteOnMap(routeState.routePath, routeState.start, routeState.dest)
       return
@@ -307,26 +436,27 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
     routePolylinesRef.current = []
     routeMarkersRef.current.forEach(m => m.setMap(null))
     routeMarkersRef.current = []
-  }, [routeState, drawRouteOnMap])
+  }, [mapReady, routeState, drawRouteOnMap])
 
-  // 컨테이너 크기 변화(우측 패널 접기/펼치기, 창 리사이즈) 시 지도 다시 그리기
+  // 컨테이너 크기 변화(우측 패널 접기/펼치기, 창 리사이즈) 시 지도 다시 그리기.
+  // filters 를 의존성에 두면 칩을 누를 때마다 옵저버를 떼었다 붙이므로 ref 로 읽는다.
   useEffect(() => {
     if (!mapRef.current || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => {
       if (!mapInstance.current) return
       requestAnimationFrame(() => {
         mapInstance.current.relayout()
-        if (filters?.cctv) renderCctvInBounds()
+        renderCctvInBounds()
       })
     })
     ro.observe(mapRef.current)
     return () => ro.disconnect()
-  }, [filters, renderCctvInBounds])
+  }, [renderCctvInBounds])
 
   // 상단 장소 검색에서 선택한 위치로 이동 + 핀 표시
   useEffect(() => {
     searchTargetRef.current = searchTarget
-    if (!searchTarget || !mapInstance.current || !window.kakao) return
+    if (!searchTarget || !mapReady || !window.kakao) return
     const latlng = new window.kakao.maps.LatLng(searchTarget.lat, searchTarget.lng)
     mapInstance.current.setLevel(3)
     mapInstance.current.setCenter(latlng)
@@ -341,7 +471,7 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
     const overlay = new window.kakao.maps.CustomOverlay({ position: latlng, content, yAnchor: 1 })
     overlay.setMap(mapInstance.current)
     searchMarkerRef.current = overlay
-  }, [searchTarget])
+  }, [mapReady, searchTarget])
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -366,7 +496,8 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
           }}
         >
           <Icon name="compass" size={isMobile ? 13 : 15} />
-          <span>경로 안내 중 · CCTV {routeState.safetyScore}개 경유</span>
+          {/* safetyScore 는 CCTV + 편의점 합계다(RouteService.analyzeSafetyData). */}
+          <span>경로 안내 중 · 안전시설 {routeState.safetyScore}곳 경유</span>
           <span style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: isMobile ? 17 : 19, height: isMobile ? 17 : 19, borderRadius: '50%',
@@ -380,23 +511,30 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
       {/* 레이어 칩 (좌상단) */}
       <div style={{ position: 'absolute', top: 16, left: isMobile ? 12 : 16, zIndex: 10, display: 'flex', gap: isMobile ? 6 : 8 }}>
         {[
-          { key: 'cctv', icon: 'camera', label: 'CCTV' },
-          { key: 'streetLamp', icon: 'lightbulb', label: '가로등' },
-          { key: 'safeZone', icon: 'shield-check', label: '안전구역' },
+          { key: 'cctv', icon: 'cctv', label: 'CCTV' },
+          // 가로등은 아직 데이터가 없다 — 켜도 표시할 게 없으므로 잠가둔다.
+          // 데이터가 들어오면 LAYER_COLOR.streetLamp(노랑) 점으로 그린다.
+          { key: 'streetLamp', icon: 'street-lamp', label: '가로등', pending: true },
+          // safeZone = 편의점(안전거점).
+          { key: 'safeZone', icon: 'store', label: '편의점' },
         ].map(ly => {
-          const on = !!filters?.[ly.key]
+          const on = !ly.pending && !!filters?.[ly.key]
           return (
             <button
               key={ly.key}
-              onClick={() => onToggleFilter?.(ly.key)}
+              onClick={() => { if (!ly.pending) onToggleFilter?.(ly.key) }}
+              disabled={ly.pending}
+              title={ly.pending ? '가로등 데이터는 아직 제공되지 않습니다' : undefined}
               style={{
                 display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 6,
                 height: CHIP_H, padding: isMobile ? '0 9px' : '0 13px',
-                borderRadius: 20, fontSize: isMobile ? 11 : 12.5, fontWeight: 600, cursor: 'pointer',
+                borderRadius: 20, fontSize: isMobile ? 11 : 12.5, fontWeight: 600,
+                cursor: ly.pending ? 'not-allowed' : 'pointer',
                 boxShadow: 'var(--shadow)', whiteSpace: 'nowrap',
                 border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
                 background: on ? 'var(--blue-primary)' : 'var(--surface)',
                 color: on ? '#fff' : 'var(--text-muted)', fontFamily: 'inherit',
+                opacity: ly.pending ? 0.5 : 1,
               }}
             >
               <Icon name={ly.icon} size={isMobile ? 13 : 15} /><span>{ly.label}</span>
@@ -404,6 +542,33 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
           )
         })}
       </div>
+
+      {/* 레이어 안내 — 몇 곳을 찾았는지, 왜 안 보이는지(너무 넓게 봄), 결과가 잘렸는지 알린다.
+          앞의 색 점이 지도 위 점 색과 같아서 어느 레이어 얘기인지 바로 읽힌다.
+          모바일에서 경로 배너가 떠 있으면 그 아래로 내린다. */}
+      {(cctvNotice || storeNotice) && (
+        <div style={{
+          position: 'absolute', zIndex: 10, left: isMobile ? 12 : 16,
+          top: 16 + CHIP_H + (isMobile && routeState?.routeActive ? 46 : 8),
+          display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+          gap: 5, pointerEvents: 'none',
+        }}>
+          {[[cctvNotice, LAYER_COLOR.cctv], [storeNotice, LAYER_COLOR.store]]
+            .filter(([text]) => text)
+            .map(([text, color]) => (
+              <div key={color} style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                height: isMobile ? 24 : 28, padding: isMobile ? '0 9px' : '0 12px',
+                borderRadius: 20, background: 'var(--surface)', border: '1px solid var(--border)',
+                boxShadow: 'var(--shadow)', fontSize: isMobile ? 10.5 : 12,
+                fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap',
+              }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                {text}
+              </div>
+            ))}
+        </div>
+      )}
 
       {/* 줌 컨트롤 (우하단) */}
       <div style={{
