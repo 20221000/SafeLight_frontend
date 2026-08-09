@@ -3,10 +3,13 @@
 // 백엔드 연동 보존: geolocation → POST /emergency-reports
 import { useState, useRef, useEffect } from 'react'
 import useIsMobile from '../../hooks/useIsMobile'
+import useAuthNav from '../../hooks/useAuthNav'
 import Icon from '../Icon'
+import ConfirmDialog from '../layout/ConfirmDialog'
 import { readEnvelope } from '../../utils/apiResponse'
 
 export default function SosButton({ user }) {
+  const { goLogin } = useAuthNav()
   // 모바일에서는 지도를 너무 가려 대기 버튼을 데스크탑의 1/2 크기로 줄인다(88 → 44px).
   // 44px는 터치 타깃 최소 권장치와 같아 더 줄이지 않는다. 확인 오버레이는 오조작을 막아야 하므로 그대로 크게 둔다.
   const isMobile = useIsMobile()
@@ -14,6 +17,10 @@ export default function SosButton({ user }) {
   const [phase, setPhase] = useState('idle') // idle | confirm | done
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
+  // 실패·안내를 알리는 창. window.alert 은 브라우저가 그리는 시스템 대화상자라
+  // 앱과 전혀 다르게 생겼고, 주소(127.0.0.1:5173)가 제목처럼 붙고, 무엇보다
+  // '다시 시도'·'로그인' 같은 다음 행동을 붙일 수가 없다 — 긴급 기능에서 막다른 골목이 된다.
+  const [dialog, setDialog] = useState(null)
   const timerRef = useRef(null)
   const doneTimerRef = useRef(null)
   // 접수가 진행 중인지 동기적으로 기록한다. loading 은 setState 라 다음 렌더까지 반영되지 않아
@@ -30,7 +37,15 @@ export default function SosButton({ user }) {
 
   const openConfirm = () => {
     if (loading) return
-    if (!user) { alert('긴급 신고는 로그인이 필요합니다.'); return }
+    if (!user) {
+      setDialog({
+        icon: 'user', title: '로그인이 필요합니다',
+        message: '신고를 계정에 연결해야 담당자가 연락하고, 허용한 친구에게 위치를 보낼 수 있습니다.',
+        confirmLabel: '로그인', onConfirm: () => { setDialog(null); goLogin() },
+        cancelLabel: '닫기',
+      })
+      return
+    }
     setPhase('confirm')
     clearTimer()
     timerRef.current = setTimeout(() => handleConfirm(), 3000) // 3초 후 자동 접수
@@ -65,7 +80,13 @@ export default function SosButton({ user }) {
       const json = await readEnvelope(res)
 
       if (!json.success) {
-        alert(json.error?.message || json.message || '신고 접수에 실패했습니다.')
+        // 실패했으면 다시 누르는 게 유일한 다음 행동이다. 창을 닫고 버튼을 찾아 헤매게 두지 않는다.
+        setDialog({
+          danger: true, title: '신고를 접수하지 못했습니다',
+          message: json.error?.message || json.message || '잠시 후 다시 시도해주세요.',
+          confirmLabel: '다시 시도', onConfirm: () => { setDialog(null); handleConfirm() },
+          cancelLabel: '닫기',
+        })
         setPhase('idle')
         return
       }
@@ -74,10 +95,33 @@ export default function SosButton({ user }) {
       setPhase('done')
       doneTimerRef.current = setTimeout(() => setPhase('idle'), 6000)
     } catch (err) {
-      if (err.code === err.PERMISSION_DENIED) {
-        alert('위치 권한이 필요합니다. 브라우저 설정에서 위치 권한을 허용해주세요.')
+      // 예전 판정은 `err.code === err.PERMISSION_DENIED` 였는데, 네트워크 오류처럼
+      // 위치와 무관한 예외는 둘 다 undefined 라 참이 되어 엉뚱하게 "위치 권한" 안내가 떴다.
+      // GeolocationPositionError 의 code 는 1/2/3 숫자다.
+      const geo = typeof err?.code === 'number' ? err.code : null
+      if (geo === 1) {
+        setDialog({
+          danger: true, icon: 'map-pin', title: '위치 권한이 꺼져 있습니다',
+          message: '지금 어디 계신지 알 수 없어 신고를 보낼 수 없습니다. 주소창 왼쪽 자물쇠 → 위치 → 허용으로 바꾼 뒤 다시 눌러주세요.',
+          confirmLabel: '확인', cancelLabel: null,
+        })
+      } else if (geo === 3) {
+        // 실내·지하에서 흔하다. 사용자 잘못이 아니라는 걸 알려주고 재시도로 잇는다.
+        setDialog({
+          danger: true, icon: 'map-pin', title: '위치를 확인하지 못했습니다',
+          message: '신호가 약한 곳에서는 시간이 더 걸릴 수 있습니다. 창가나 실외로 나가서 다시 시도해주세요.',
+          confirmLabel: '다시 시도', onConfirm: () => { setDialog(null); handleConfirm() },
+          cancelLabel: '닫기',
+        })
       } else {
-        alert('신고 접수 중 오류가 발생했습니다.')
+        setDialog({
+          danger: true, title: '신고를 보내지 못했습니다',
+          message: geo === 2
+            ? '기기에서 위치를 가져오지 못했습니다. 잠시 후 다시 시도해주세요.'
+            : '네트워크 상태를 확인한 뒤 다시 시도해주세요.',
+          confirmLabel: '다시 시도', onConfirm: () => { setDialog(null); handleConfirm() },
+          cancelLabel: '닫기',
+        })
       }
       setPhase('idle')
     } finally {
@@ -180,39 +224,91 @@ export default function SosButton({ user }) {
         </div>
       )}
 
-      {/* 완료 토스트 */}
+      {/* 완료 배너.
+          예전엔 지도 위 20px 에 떠 있는 둥근 카드였는데, 아무 데도 닿지 않고 그림자만 짙어
+          '붕 떠' 보였다. 지금은 화면 위쪽 끝에 붙여 위에서 내려온 알림으로 읽히게 한다
+          (위 모서리는 각지고 아래만 둥글다 = 위쪽 화면에 물려 있다는 신호). */}
       {phase === 'done' && (
         <div style={{
-          position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', width: 520, maxWidth: '90%',
-          background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, zIndex: 200,
-          boxShadow: '0 12px 34px rgba(15,23,42,.16)', padding: '20px 22px', display: 'flex', gap: 16, alignItems: 'flex-start',
+          position: 'absolute', top: 0, zIndex: 200,
+          ...(isMobile
+            ? { left: 0, right: 0 }
+            : { left: '50%', transform: 'translateX(-50%)', width: 560, maxWidth: 'calc(100% - 32px)' }),
         }}>
           <div style={{
-            width: 46, height: 46, borderRadius: 14, background: 'rgba(16,185,129,.13)', color: 'var(--safe)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            background: 'var(--surface)', border: '1px solid var(--border)', borderTop: 'none',
+            borderRadius: '0 0 16px 16px', overflow: 'hidden',
+            boxShadow: '0 8px 22px rgba(15,23,42,.10)',
+            animation: 'ls-drop .26s cubic-bezier(.16,.84,.44,1)',
           }}>
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
-          </div>
-          {/* minWidth:0 — 없으면 좁은 화면에서 토스트 본문이 닫기(×) 버튼을 밀어낸다. */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 16.5, fontWeight: 800, letterSpacing: '-.3px' }}>긴급 신고가 접수되었습니다</div>
-            <div style={{ fontSize: 13.5, color: 'var(--text-muted)', marginTop: 5, lineHeight: 1.7 }}>
-              허용된 친구에게 현재 위치가 공유되었습니다.<br />
-              관제센터로 신고가 전송되었습니다
-              {result?.emergencyReportId != null && (
-                <> · 신고번호 <b style={{ color: 'var(--text-strong)', fontFamily: "'Inter',sans-serif" }}>RP-{result.emergencyReportId}</b></>
-              )}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: isMobile ? '13px 14px 12px' : '15px 18px 14px' }}>
+              {/* 옅은 배경에 초록 아이콘이 아니라 꽉 찬 원 — 접수됐다는 결론을 한눈에 못 박는다. */}
+              <div style={{
+                width: 28, height: 28, borderRadius: '50%', background: 'var(--safe)', color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1,
+              }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+              </div>
+
+              {/* minWidth:0 — 없으면 본문이 닫기(×) 버튼을 화면 밖으로 밀어낸다. */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: isMobile ? 14.5 : 15.5, fontWeight: 800, letterSpacing: '-.3px' }}>긴급 신고가 접수되었습니다</span>
+                  {result?.emergencyReportId != null && (
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, fontFamily: "'Inter',sans-serif", letterSpacing: '.2px',
+                      color: 'var(--text-muted)', background: 'var(--bg)', border: '1px solid var(--border)',
+                      padding: '1px 7px', borderRadius: 6,
+                    }}>RP-{result.emergencyReportId}</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.55 }}>
+                  허용한 친구에게 현재 위치를 보냈고, 관제센터로 신고가 전송되었습니다.
+                </div>
+                {/* 색 알약 두 개는 정보량에 비해 너무 시끄러웠다(빨강·파랑이 제목보다 먼저 눈에 들어왔다).
+                    같은 내용을 한 줄 보조 텍스트로 낮춘다 — 사이렌만 '지금 켜져 있는 상태'라 점을 남긴다. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, fontSize: 11.5, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--danger)', animation: 'ls-blink 1.2s infinite' }} />
+                    사이렌 켜짐
+                  </span>
+                  <span style={{ opacity: .45 }}>·</span>
+                  <span>위험구역 자동 등록</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setPhase('idle')}
+                aria-label="닫기"
+                style={{
+                  border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer',
+                  padding: 2, margin: -2, lineHeight: 1, display: 'flex', flexShrink: 0,
+                }}
+              ><Icon name="x" size={18} /></button>
             </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(225,29,72,.10)', color: 'var(--danger)', fontSize: 12, fontWeight: 700, padding: '5px 11px', borderRadius: 20 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--danger)', animation: 'ls-blink 1.2s infinite' }} /><Icon name="volume" size={13} /> 사이렌 켜짐
-              </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--blue-tint)', color: 'var(--blue-primary)', fontSize: 12, fontWeight: 700, padding: '5px 11px', borderRadius: 20 }}><Icon name="map-pin" size={13} /> 위험구역 자동 등록</span>
-            </div>
+
+            {/* 남은 시간 막대 — 6초 뒤 저절로 사라지는데, 예고 없이 사라지면 놓쳤나 싶어진다.
+                아래 doneTimer 와 같은 6초다. 한쪽을 바꾸면 다른 쪽도 바꿔야 한다. */}
+            <div style={{
+              height: 2, background: 'var(--safe)', transformOrigin: 'left',
+              animation: 'ls-timebar 6s linear forwards',
+            }} />
           </div>
-          <div onClick={() => setPhase('idle')} style={{ color: 'var(--text-muted)', cursor: 'pointer', lineHeight: 1, display: 'flex' }}><Icon name="x" size={20} /></div>
         </div>
       )}
+
+      {/* 안내·오류 — 시스템 alert 대신 앱 대화상자로 띄운다. 위치가 fixed 라 지도 컨테이너 밖에서도 가운데 뜬다. */}
+      <ConfirmDialog
+        open={!!dialog}
+        title={dialog?.title}
+        message={dialog?.message}
+        icon={dialog?.icon}
+        danger={dialog?.danger}
+        confirmLabel={dialog?.confirmLabel}
+        cancelLabel={dialog?.cancelLabel}
+        onConfirm={dialog?.onConfirm || (() => setDialog(null))}
+        onCancel={() => setDialog(null)}
+      />
     </>
   )
 }

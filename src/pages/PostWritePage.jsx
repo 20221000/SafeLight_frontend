@@ -18,7 +18,11 @@ export default function PostWritePage({ user, onLogout }) {
   const isEdit = !!postId
   const fileInputRef = useRef(null)
 
-  const [category, setCategory] = useState('INFO')
+  // 수정 모드는 null 로 시작한다. GET /posts/{id}(PostDetailResponse)에 category 필드가 없어
+  // 지금 이 글이 무슨 카테고리인지 알 수가 없기 때문이다. 'INFO' 를 기본값으로 깔아두면
+  // 제목만 고쳐 저장해도 PUT 이 category:'INFO' 를 실어 보내 질문·팁·안전신고 글이 조용히 '정보'로 바뀐다
+  // (백엔드 updatePost 는 category 가 null 이 아니면 그대로 덮어쓴다).
+  const [category, setCategory] = useState(isEdit ? null : 'INFO')
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [files, setFiles] = useState([])
@@ -64,10 +68,11 @@ export default function PostWritePage({ user, onLogout }) {
     try {
       // 수정 모드: PUT /posts/{postId} — 제목·내용·카테고리만. 첨부는 상세 화면에서 개별 관리.
       if (isEdit) {
+        // category 를 고르지 않았으면 아예 보내지 않는다. 백엔드는 null 이면 기존 값을 그대로 둔다.
         const res = await fetch(`/posts/${postId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ title, content, category }),
+          body: JSON.stringify(category ? { title, content, category } : { title, content }),
         })
         const json = await readEnvelope(res)
         if (!json.success) { alert(json.message || '게시글 수정에 실패했습니다.'); return }
@@ -129,6 +134,13 @@ export default function PostWritePage({ user, onLogout }) {
                 )
               })}
             </div>
+            {/* 수정 모드에서 아무것도 선택돼 있지 않은 상태 — 서버가 현재 카테고리를 안 내려준다.
+                "몰라서 안 고른 것"이라고 알려야 사용자가 아무거나 눌러 바꿔버리지 않는다. */}
+            {isEdit && !category && (
+              <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--text-muted)' }}>
+                현재 카테고리를 불러올 수 없습니다. 그대로 두려면 선택하지 마세요 — 고르면 그 값으로 바뀝니다.
+              </div>
+            )}
           </div>
 
           {/* 제목 */}

@@ -7,8 +7,12 @@ import Icon from '../components/Icon'
 import { POST_CATEGORY } from '../theme/tokens'
 import { readEnvelope } from '../utils/apiResponse'
 
+// 모르는 값이면 배지를 아예 그리지 않는다. 예전엔 INFO 로 떨어뜨렸는데,
+// GET /posts/{id}(PostDetailResponse)에 category 필드가 없어서 실제로는 모든 글이 '정보'로 찍혔다
+// — 공지·질문·팁·안전신고 글을 열어도 '정보' 였다. 없는 값을 그럴듯하게 메우느니 비워 둔다.
 function CategoryBadge({ category }) {
-  const c = POST_CATEGORY[category] ?? POST_CATEGORY.INFO
+  const c = POST_CATEGORY[category]
+  if (!c) return null
   return <span style={{ display: 'inline-block', background: c.bg, color: c.color, fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 7, fontFamily: "'Inter',sans-serif", letterSpacing: '.3px' }}>{c.label}</span>
 }
 

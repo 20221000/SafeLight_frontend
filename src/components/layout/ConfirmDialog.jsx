@@ -8,14 +8,18 @@ export default function ConfirmDialog({
   title,
   message,
   confirmLabel = '확인',
-  cancelLabel = '취소',
+  cancelLabel = '취소',   // null 을 주면 버튼 하나짜리 알림창이 된다(되돌릴 게 없는 안내·오류용)
   danger = false,
+  icon,                   // 없으면 danger 여부로 고른다
   onConfirm,
   onCancel,
 }) {
   if (!open) return null
 
   const accent = danger ? 'var(--danger)' : 'var(--blue-primary)'
+  // 확인/취소가 아니라 '알겠다'만 받는 창은 취소 버튼이 오히려 헷갈린다.
+  // 그럴 때 버튼 하나를 꽉 채우고, 스크림·ESC 로 닫는 경로는 그대로 둔다.
+  const noticeOnly = cancelLabel == null
 
   return (
     <div
@@ -43,7 +47,7 @@ export default function ConfirmDialog({
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: danger ? 'rgba(225,29,72,.10)' : 'var(--blue-tint)',
         }}>
-          <Icon name={danger ? 'alert-triangle' : 'compass'} size={22} color={accent} />
+          <Icon name={icon || (danger ? 'alert-triangle' : 'compass')} size={22} color={accent} />
         </div>
 
         <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-.2px' }}>{title}</div>
@@ -52,16 +56,18 @@ export default function ConfirmDialog({
         )}
 
         <div style={{ display: 'flex', gap: 9, marginTop: 20 }}>
-          <button
-            onClick={onCancel}
-            style={{
-              flex: 1, height: 46, borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
-              border: '1px solid var(--border)', background: 'var(--surface)',
-              color: 'var(--text-muted)', fontSize: 14, fontWeight: 600,
-            }}
-          >
-            {cancelLabel}
-          </button>
+          {!noticeOnly && (
+            <button
+              onClick={onCancel}
+              style={{
+                flex: 1, height: 46, borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
+                border: '1px solid var(--border)', background: 'var(--surface)',
+                color: 'var(--text-muted)', fontSize: 14, fontWeight: 600,
+              }}
+            >
+              {cancelLabel}
+            </button>
+          )}
           <button
             onClick={onConfirm}
             autoFocus

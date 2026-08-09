@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import AdminShell from '../components/layout/AdminShell'
+import AdminShell, { notifyAdminReportsChanged } from '../components/layout/AdminShell'
 import ActionSheet from '../components/layout/ActionSheet'
+import ConfirmDialog from '../components/layout/ConfirmDialog'
 import RowMenu from '../components/Admin/RowMenu'
 import { adminStyles as s, LEVEL_STYLE, STATUS_STYLE } from '../components/Admin/adminStyles'
 import { apiSend } from '../utils/adminApi'
@@ -40,6 +41,7 @@ export default function AdminReportPage({ user, onLogout }) {
   const [search, setSearch] = useState('')          // 입력 중인 값
   const [searchTerm, setSearchTerm] = useState('')  // 디바운스로 확정된 검색어
   const [sheetReport, setSheetReport] = useState(null) // 모바일 '⋮' 액션 시트 대상
+  const [confirmFalse, setConfirmFalse] = useState(null) // 허위신고 확정 대상 (되돌릴 수 없어 한 번 더 묻는다)
 
   // 기간을 거꾸로 넣으면 백엔드가 400을 던지므로 미리 막는다.
   const invalidRange = Boolean(startDate && endDate && startDate > endDate)
@@ -110,6 +112,9 @@ export default function AdminReportPage({ user, onLogout }) {
       return matchesStatusFilter(next) ? [next] : []
     }))
     loadStats()
+    // 사이드바 '신고 관리' 배지도 다시 세게 한다. 허위신고로 처리하면 서버에서 그 건이 빠지는데
+    // 배지는 화면을 새로 열기 전까지 옛 숫자를 들고 있었다.
+    notifyAdminReportsChanged()
   }, [load, loadStats, matchesStatusFilter, pageInfo.page])
 
   const setStatus = async (report, status) => {
@@ -121,8 +126,13 @@ export default function AdminReportPage({ user, onLogout }) {
     }
   }
 
-  const markFalse = async (report) => {
-    if (!window.confirm(`신고 #${report.reportId}을(를) 허위신고로 처리할까요? 신고자의 허위신고 횟수가 증가합니다.`)) return
+  // 허위신고는 서버에 되돌리는 경로가 없다(PATCH /status 는 enum 만 바꿀 뿐 isFalseReport·
+  // 신고자 벌점·위험구역을 그대로 둬서, 눌러봐야 앞뒤가 안 맞는 기록만 남는다).
+  // 그래서 누르기 전에 못 되돌린다는 걸 분명히 알린다 — 겪고 나서 알게 두지 않는다.
+  const markFalse = (report) => setConfirmFalse(report)
+
+  const runMarkFalse = async (report) => {
+    setConfirmFalse(null)
     try {
       const updated = await apiSend(`/emergency-reports/${report.reportId}/false-report`, 'PATCH')
       applyUpdated(report.reportId, updated)
@@ -190,10 +200,12 @@ export default function AdminReportPage({ user, onLogout }) {
       { code: 'FALSE', label: '오탐', count: stats.falseCount },
     ]
 
+    // 허위신고로 확정된 건은 나머지 두 개도 잠긴다 — 서버가 되돌려주지 않아 눌러도 앞뒤가 안 맞는다.
+    // 왜 잠겼는지 라벨에 적어 둔다(그냥 회색이면 고장으로 읽힌다).
     const sheetActions = (r) => [
-      { label: '접수됨으로 되돌리기', tone: 'primary', disabled: r.reportStatus === 'RECEIVED' || r.isFalseReport, onClick: () => setStatus(r, 'RECEIVED') },
+      { label: r.isFalseReport ? '접수됨으로 되돌리기 (허위신고 확정 건은 불가)' : '접수됨으로 되돌리기', tone: 'primary', disabled: r.reportStatus === 'RECEIVED' || r.isFalseReport, onClick: () => setStatus(r, 'RECEIVED') },
       { label: '해결완료로 변경', tone: 'safe', disabled: r.reportStatus === 'RESOLVED' || r.isFalseReport, onClick: () => setStatus(r, 'RESOLVED') },
-      { label: r.isFalseReport ? '허위신고 처리됨' : '허위신고(오탐)로 처리', tone: 'danger', disabled: r.isFalseReport, onClick: () => markFalse(r) },
+      { label: r.isFalseReport ? '허위신고 처리됨 (되돌릴 수 없음)' : '허위신고(오탐)로 처리', tone: 'danger', disabled: r.isFalseReport, onClick: () => markFalse(r) },
     ]
 
     return (
@@ -338,6 +350,17 @@ export default function AdminReportPage({ user, onLogout }) {
             onClose={() => setSheetReport(null)}
           />
         )}
+
+        <ConfirmDialog
+          open={!!confirmFalse}
+          danger
+          title={`신고 #ER-${confirmFalse?.reportId} 을(를) 허위신고로 확정합니다`}
+          message={'되돌릴 수 없습니다. 신고자의 허위신고 횟수가 1 올라가고, 누적 3회가 되면 자동으로 블랙리스트에 들어갑니다. 이 신고로 잡혀 있던 위험구역도 다시 계산됩니다.'}
+          confirmLabel="허위신고로 확정"
+          cancelLabel="취소"
+          onConfirm={() => runMarkFalse(confirmFalse)}
+          onCancel={() => setConfirmFalse(null)}
+        />
       </AdminShell>
     )
   }
@@ -352,6 +375,8 @@ export default function AdminReportPage({ user, onLogout }) {
       tone: 'primary',
       selected: r.reportStatus === 'RECEIVED' && !r.isFalseReport,
       disabled: r.isFalseReport || r.reportStatus === 'RECEIVED',
+      // 왜 못 누르는지 적어 준다 — 회색으로만 두면 화면이 고장 난 걸로 읽힌다.
+      caption: r.isFalseReport ? '허위신고로 확정된 건은 상태를 되돌릴 수 없습니다' : undefined,
       onClick: () => setStatus(r, 'RECEIVED'),
     },
     {
@@ -366,7 +391,9 @@ export default function AdminReportPage({ user, onLogout }) {
       tone: 'danger',
       selected: r.isFalseReport,
       disabled: r.isFalseReport,
-      caption: '신고자 허위신고 +1 · 누적 3회면 블랙리스트',
+      caption: r.isFalseReport
+        ? '이미 확정됨 · 되돌릴 수 없습니다'
+        : '되돌릴 수 없음 · 신고자 허위신고 +1 · 누적 3회면 블랙리스트',
       onClick: () => markFalse(r),
     },
   ]
@@ -501,6 +528,17 @@ export default function AdminReportPage({ user, onLogout }) {
         </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!confirmFalse}
+        danger
+        title={`신고 #ER-${confirmFalse?.reportId} 을(를) 허위신고로 확정합니다`}
+        message={'되돌릴 수 없습니다. 신고자의 허위신고 횟수가 1 올라가고, 누적 3회가 되면 자동으로 블랙리스트에 들어갑니다. 이 신고로 잡혀 있던 위험구역도 다시 계산됩니다.'}
+        confirmLabel="허위신고로 확정"
+        cancelLabel="취소"
+        onConfirm={() => runMarkFalse(confirmFalse)}
+        onCancel={() => setConfirmFalse(null)}
+      />
     </AdminShell>
   )
 }

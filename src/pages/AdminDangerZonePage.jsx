@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import AdminShell from '../components/layout/AdminShell'
+import AdminShell, { notifyAdminReportsChanged } from '../components/layout/AdminShell'
 import ActionSheet from '../components/layout/ActionSheet'
 import { adminStyles as s, LEVEL_STYLE, STATUS_STYLE } from '../components/Admin/adminStyles'
 import { apiGet, apiSend } from '../utils/adminApi'
@@ -128,6 +128,7 @@ export default function AdminDangerZonePage({ user, onLogout }) {
       await apiSend(`/emergency-reports/${report.reportId}/status`, 'PATCH', { reportStatus: status })
       await refreshDetail(detail.dangerZoneId)
       await load()
+      notifyAdminReportsChanged()
     } catch (e) {
       alert('상태 변경 실패: ' + e.message)
     }
@@ -139,6 +140,8 @@ export default function AdminDangerZonePage({ user, onLogout }) {
       await apiSend(`/emergency-reports/${report.reportId}/false-report`, 'PATCH')
       await refreshDetail(detail.dangerZoneId)
       await load()
+      // 사이드바 '신고 관리' 배지도 다시 세게 한다 — 이 화면에서 처리해도 숫자는 그쪽에 있다.
+      notifyAdminReportsChanged()
     } catch (e) {
       alert('허위신고 처리 실패: ' + e.message)
     }

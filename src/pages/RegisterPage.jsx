@@ -49,7 +49,10 @@ export default function RegisterPage({ onGoLogin, modal = false, onClose }) {
         return
       }
       setSuccess(true)
-      setTimeout(() => onGoLogin(), 1500)
+      // 1.5초는 만들어진 계정을 훑기에도 짧았다. 읽을 내용을 늘린 만큼 3초로 두고,
+      // 대신 남은 시간을 막대로 보여주고 '로그인하러 가기'로 언제든 건너뛸 수 있게 했다.
+      // 아래 완료 화면의 진행 막대와 같은 3초다 — 한쪽을 바꾸면 다른 쪽도 바꿔야 한다.
+      setTimeout(() => onGoLogin(), 3000)
     } catch {
       setError('서버 연결에 실패했습니다.')
     } finally {
@@ -58,17 +61,70 @@ export default function RegisterPage({ onGoLogin, modal = false, onClose }) {
   }
 
   if (success) {
+    // 예전 완료 화면은 420px 카드 한가운데에 아이콘·제목·한 줄만 떠 있어서
+    // 카드 대부분이 빈 채로 남았다(= 붕 뜬 느낌의 원인). 세 가지로 채운다:
+    //   1) 로고를 그대로 둬서 입력 화면에서 이어지는 같은 카드로 읽히게 하고,
+    //   2) 방금 만들어진 계정을 실제로 보여주고(폼과 같은 --bg + 테두리 언어),
+    //   3) 자동 이동을 기다리게 두지 않고 버튼으로 건너뛸 수 있게 한다.
     return (
       <AuthLayout modal={modal} onClose={onClose}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '20px 0' }}>
-          <div style={{
-            width: 56, height: 56, borderRadius: 16, background: 'rgba(16,185,129,.13)', color: 'var(--safe)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+        <AuthLogo subtitle="가입이 완료되었습니다" />
+
+        <div style={{
+          border: '1px solid var(--border)', borderRadius: 14, background: 'var(--bg)', overflow: 'hidden',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '15px 16px' }}>
+            <div style={{
+              width: 30, height: 30, borderRadius: '50%', background: 'var(--safe)', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-.2px' }}>계정이 만들어졌습니다</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>이제 이 아이디로 로그인할 수 있습니다</div>
+            </div>
           </div>
-          <div style={{ fontSize: 18, fontWeight: 800 }}>회원가입 완료!</div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>로그인 화면으로 이동합니다...</div>
+
+          {/* 무엇이 만들어졌는지 눈으로 확인시킨다. 오타를 여기서 알아채면 다시 가입하면 된다. */}
+          <div style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)', padding: '4px 16px' }}>
+            {[
+              { label: '아이디', value: form.username },
+              { label: '닉네임', value: form.nickname },
+              { label: '이메일', value: form.email },
+            ].map((row, i, arr) => (
+              <div key={row.label} style={{
+                display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0',
+                borderBottom: i === arr.length - 1 ? 'none' : '1px solid var(--border)',
+              }}>
+                <span style={{ fontSize: 12.5, color: 'var(--text-muted)', width: 52, flexShrink: 0 }}>{row.label}</span>
+                {/* minWidth:0 — 긴 이메일이 칸을 넘치지 않게. */}
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <button
+          onClick={onGoLogin}
+          style={{
+            width: '100%', height: 50, marginTop: 18, border: 'none', borderRadius: 13,
+            background: 'var(--blue-primary)', color: '#fff', fontSize: 15, fontWeight: 700,
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}
+        >로그인하러 가기</button>
+
+        {/* 자동 이동까지 남은 시간. 예전엔 '이동합니다...' 뿐이라 언제 넘어갈지 알 수 없었다. */}
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', marginBottom: 7 }}>
+            잠시 후 로그인 화면으로 이동합니다
+          </div>
+          <div style={{ height: 3, borderRadius: 2, background: 'var(--border)', overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', background: 'var(--blue-primary)', transformOrigin: 'left',
+              animation: 'ls-timebar 3s linear forwards',
+            }} />
+          </div>
         </div>
       </AuthLayout>
     )

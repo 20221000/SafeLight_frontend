@@ -8,6 +8,13 @@ import MobileAdminShell from './MobileAdminShell'
 import { ADMIN_SECTIONS as SECTIONS, ADMIN_ICONS as ICONS } from './adminNavItems'
 import useIsMobile from '../../hooks/useIsMobile'
 
+// 신고 상태를 바꾼 화면이 배지에게 "다시 세라"고 알리는 통로.
+// 배지 값은 AdminShell 이 들고 있는데 상태를 바꾸는 건 그 자식 페이지들이라 서로 닿지 않는다.
+// 알림 벨의 notifyNotificationsChanged 와 같은 방식이다.
+const ADMIN_REPORTS_CHANGED = 'ls:admin-reports-changed'
+export const notifyAdminReportsChanged = () =>
+  window.dispatchEvent(new Event(ADMIN_REPORTS_CHANGED))
+
 export default function AdminShell({ user, onLogout, active, title, subtitle, headerRight, children }) {
   const navigate = useNavigate()
   const isMobile = useIsMobile()
@@ -21,17 +28,26 @@ export default function AdminShell({ user, onLogout, active, title, subtitle, he
     }
   }, [user, navigate])
 
+  // 마운트할 때 한 번 + 신고 상태가 바뀔 때마다 다시 센다.
+  // 예전엔 마운트 때 한 번뿐이라, 허위신고로 처리해 서버 쪽 reportCount 가 줄어도
+  // (updateDangerZoneLevelAndCount 가 허위 건을 빼고 다시 센다) 배지는 '1' 그대로 남았다.
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') return
     let alive = true
-    apiGet('/danger-zones')
-      .then(zones => {
-        if (!alive) return
-        const total = (Array.isArray(zones) ? zones : []).reduce((sum, z) => sum + (z.reportCount ?? 0), 0)
-        setReportCount(total)
-      })
-      .catch(() => { /* 실패 시 배지 미표시 */ })
-    return () => { alive = false }
+
+    const refresh = () => {
+      apiGet('/danger-zones')
+        .then(zones => {
+          if (!alive) return
+          const total = (Array.isArray(zones) ? zones : []).reduce((sum, z) => sum + (z.reportCount ?? 0), 0)
+          setReportCount(total)
+        })
+        .catch(() => { /* 실패 시 배지 미표시 */ })
+    }
+
+    refresh()
+    window.addEventListener(ADMIN_REPORTS_CHANGED, refresh)
+    return () => { alive = false; window.removeEventListener(ADMIN_REPORTS_CHANGED, refresh) }
   }, [user])
 
   const handleLogout = () => {

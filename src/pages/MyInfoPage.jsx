@@ -57,16 +57,6 @@ const inputStyle = {
   borderRadius: 11, fontSize: 14, color: 'var(--text-strong)', outline: 'none', fontFamily: 'inherit',
 }
 
-// 읽기 전용일 때는 입력칸처럼 보이지 않게 테두리를 죽이고 글자를 흐리게 둔다.
-const readableInput = (editable) => (editable ? inputStyle : {
-  ...inputStyle,
-  background: 'transparent',
-  borderColor: 'transparent',
-  color: 'var(--text-muted)',
-  padding: '0 2px',
-  cursor: 'default',
-})
-
 // 카드 하단 버튼 줄 — 우측 정렬
 const actionRow = { display: 'flex', justifyContent: 'flex-end', gap: 8 }
 
@@ -313,17 +303,50 @@ export default function MyInfoPage({ user, onLogout, onUpdateUser }) {
 
         {/* 계정 설정 */}
         <Card title="계정 설정" desc="프로필과 비밀번호를 변경할 수 있습니다.">
-          {/* 수정 모드가 아니면 세 칸 모두 잠겨 있다 */}
-          <Field label="닉네임">
-            <input style={readableInput(editingProfile)} disabled={!editingProfile} placeholder="닉네임" value={nickname} onChange={e => setNickname(e.target.value)} />
-          </Field>
-          <Field label="이메일">
-            <input style={readableInput(editingProfile)} disabled={!editingProfile} type="email" inputMode="email" autoComplete="email" placeholder="등록된 이메일 없음" value={email} onChange={e => setEmail(e.target.value)} />
-          </Field>
-          <Field label="전화번호">
-            {/* 백엔드가 010-1234-5678 형식만 받아서 입력하는 대로 하이픈을 넣어준다 */}
-            <input style={readableInput(editingProfile)} disabled={!editingProfile} type="tel" inputMode="numeric" autoComplete="tel" placeholder="등록된 전화번호 없음" value={phone} onChange={e => setPhone(formatPhone(e.target.value))} />
-          </Field>
+          {/* 읽을 때와 고칠 때의 생김새를 아예 다르게 둔다.
+              예전에는 두 모드가 같은 <input> 을 쓰면서 테두리만 지웠는데, 그러면 읽기 화면에서
+              라벨(12.5px muted)과 값(14px muted)이 크기도 색도 거의 같아 어느 쪽이 내 정보인지
+              눈에 안 들어왔다. 읽을 때는 값을 굵고 진하게 세운 표로, 고칠 때만 입력칸을 보여준다. */}
+          {editingProfile ? (
+            <>
+              <Field label="닉네임">
+                <input style={inputStyle} placeholder="닉네임" value={nickname} onChange={e => setNickname(e.target.value)} />
+              </Field>
+              <Field label="이메일">
+                <input style={inputStyle} type="email" inputMode="email" autoComplete="email" placeholder="등록된 이메일 없음" value={email} onChange={e => setEmail(e.target.value)} />
+              </Field>
+              <Field label="전화번호">
+                {/* 백엔드가 010-1234-5678 형식만 받아서 입력하는 대로 하이픈을 넣어준다 */}
+                <input style={inputStyle} type="tel" inputMode="numeric" autoComplete="tel" placeholder="등록된 전화번호 없음" value={phone} onChange={e => setPhone(formatPhone(e.target.value))} />
+              </Field>
+            </>
+          ) : (
+            // marginBottom 은 Field 와 같은 14 — 모드를 오갈 때 버튼 줄이 위아래로 튀지 않게.
+            <div style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--bg)', overflow: 'hidden', marginBottom: 14 }}>
+              {[
+                { label: '닉네임', value: nickname, empty: '등록된 닉네임 없음' },
+                { label: '이메일', value: email, empty: '등록된 이메일 없음' },
+                { label: '전화번호', value: phone, empty: '등록된 전화번호 없음' },
+              ].map((row, i, arr) => (
+                <div key={row.label} style={{
+                  display: 'flex', alignItems: 'center', gap: 14, padding: '13px 15px',
+                  borderBottom: i === arr.length - 1 ? 'none' : '1px solid var(--border)',
+                }}>
+                  <span style={{ flexShrink: 0, width: 62, fontSize: 12.5, color: 'var(--text-muted)' }}>{row.label}</span>
+                  {/* minWidth:0 — 긴 이메일이 칸을 넘쳐 카드를 밀어내지 않게. */}
+                  <span style={{
+                    flex: 1, minWidth: 0, textAlign: 'right',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    // 값이 없으면 굵게 강조할 게 아니라 '비어 있다'로 읽혀야 한다.
+                    fontSize: row.value ? 14.5 : 13,
+                    fontWeight: row.value ? 700 : 500,
+                    color: row.value ? 'var(--text-strong)' : 'var(--text-muted)',
+                    letterSpacing: row.value ? '-.2px' : 0,
+                  }}>{row.value || row.empty}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <div style={actionRow}>
             {editingProfile && (
               <button onClick={cancelProfileEdit} disabled={saving} style={{ ...secondaryBtn, opacity: saving ? .6 : 1 }}>취소</button>

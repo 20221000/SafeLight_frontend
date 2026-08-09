@@ -82,3 +82,7 @@ a:hover { color: var(--blue-deep); }
 }
 @keyframes ls-count { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 383; } }
 @keyframes ls-spin { to { transform: rotate(360deg); } }
+/* 상단 배너: 위에서 내려온다는 걸 보여줘야 '떠 있는 카드'가 아니라 '내려온 알림'으로 읽힌다 */
+@keyframes ls-drop { from { transform: translateY(-100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+/* 자동으로 닫히는 남은 시간. transform 이라 리플로우 없이 돈다 */
+@keyframes ls-timebar { from { transform: scaleX(1); } to { transform: scaleX(0); } }

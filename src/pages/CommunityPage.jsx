@@ -23,6 +23,14 @@ const SORT_OPTIONS = [
   { code: 'likes',    label: '좋아요순', metric: 'likeCount' },
   { code: 'comments', label: '댓글순',   metric: 'commentCount' },
 ]
+// 사이드바 '카테고리별 인기글'에 그릴 순서.
+// 다섯 카테고리를 전부 GET /posts?category=X 로 받는다. /posts/summary 는 쓰지 않는다 —
+// 그쪽은 findTop5ByCategoryOrderByCreatedAtDesc 라 최신순이 이름에 박혀 있어 좋아요순을 못 낸다
+// (게다가 NOTICE·QUESTION·INFO 세 개만 준다). getPostsByCategory 는 buildSearchSort 를 태워
+// likes 를 받고 다섯 카테고리를 모두 허용하므로, 여기서는 그쪽 하나로 통일하는 편이 맞다.
+const POPULAR_CATEGORIES = ['NOTICE', 'INFO', 'QUESTION', 'REPORT', 'TIP']
+const POPULAR_SORT = 'likes'  // buildSearchSort: likeCount DESC, 동점이면 createdAt DESC
+
 const sortLabel = (code) => SORT_OPTIONS.find(o => o.code === code)?.label ?? '최신순'
 const sortMetric = (code) => SORT_OPTIONS.find(o => o.code === code)?.metric ?? null
 const metricStyle = (activeMetric, key) =>
@@ -54,12 +62,11 @@ export default function CommunityPage({ user, onLogout }) {
   const [posts, setPosts] = useState([])
   const [notices, setNotices] = useState([])
   const [pageInfo, setPageInfo] = useState(null)
-  // 통계 카드용 전체 게시글 수 — pageInfo 는 탭·검색에 따라 바뀌므로 따로 들고 있는다.
-  const [totalPosts, setTotalPosts] = useState(null)
-  // GET /posts/summary → 카테고리별 최신글 { notices, questions, info }. 이쪽은 정렬 파라미터가 없다.
-  const [summary, setSummary] = useState({ notices: [], questions: [], info: [] })
-  // 커뮤니티 통계. 지금까지 이 값은 초기값 null 그대로여서 화면에 늘 '-' 만 찍혔다(조회 자체가 없었다).
-  const [stats, setStats] = useState({ todayPosts: null, totalMembers: null })
+  // 카테고리별 인기글 — 카테고리 코드를 그대로 키로 쓴다.
+  const [popular, setPopular] = useState({})
+  // 조회 실패 사유. 빈 목록과 구분해야 한다 — 이 조회도 로그인이 필요해서 비로그인이면 401 로 비는데,
+  // 예전엔 그걸 '데이터 준비 중입니다'로 표시했다(본문은 '로그인이 필요합니다'인데 사이드바만 딴소리였다).
+  const [popularError, setPopularError] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('') // 조회 실패 사유 (403 등) — 빈 목록과 구분해서 보여준다
 
@@ -88,9 +95,6 @@ export default function CommunityPage({ user, onLogout }) {
         setNotices(json.data.notices ?? [])
         setPosts(json.data.items ?? [])
         setPageInfo(json.data.pageInfo ?? null)
-        // '전체 게시글'은 이때만 갱신한다. pageInfo 를 그대로 쓰면 '질문' 탭에서는 질문 수가,
-        // 검색 중에는 검색 결과 수가 '전체 게시글'로 찍혔다.
-        setTotalPosts(json.data.pageInfo?.totalElements ?? null)
       } else {
         setNotices([])
         setPosts(json.data.items ?? [])
@@ -128,46 +132,38 @@ export default function CommunityPage({ user, onLogout }) {
   // 정렬 기준을 바꾸면 페이지를 되돌린다 — 3페이지에서 기준만 바꾸면 엉뚱한 구간이 나온다.
   const changeSort = (code) => { setSort(code); setCurrentPage(0); setSortOpen(false) }
 
-  // 사이드바 카테고리별 최신글 — 목록과 독립적으로 최초 1회만 조회
+  // 사이드바 카테고리별 인기글 — 목록과 독립적으로 최초 1회만 조회.
+  // 카테고리마다 요청이 하나씩 필요하다(한 번에 여러 카테고리를 받는 엔드포인트가 없다).
+  // 다섯 개를 한꺼번에 던진다 — 순차로 하면 카드가 다섯 번에 걸쳐 나눠 채워진다.
   useEffect(() => {
     let alive = true
     ;(async () => {
-      try {
-        const token = localStorage.getItem('accessToken')
-        const headers = token ? { Authorization: `Bearer ${token}` } : {}
-        const res = await fetch('/posts/summary', { headers })
-        const json = await readEnvelope(res)
-        if (!alive || !json.success || !json.data) return
-        setSummary({
-          notices: json.data.notices ?? [],
-          questions: json.data.questions ?? [],
-          info: json.data.info ?? [],
-        })
-      } catch { /* 사이드바는 부가 정보 — 실패해도 본문에 영향 없음 */ }
+      const token = localStorage.getItem('accessToken')
+      const headers = token ? { Authorization: `Bearer ${token}` } : {}
+      const results = await Promise.all(POPULAR_CATEGORIES.map(async cat => {
+        try {
+          const json = await readEnvelope(await fetch(`/posts?category=${cat}&page=0&size=5&sort=${POPULAR_SORT}`, { headers }))
+          return json.success ? { cat, items: json.data?.items ?? [] } : { cat, message: json.message }
+        } catch { return { cat, message: '서버에 연결하지 못했습니다.' } }
+      }))
+      if (!alive) return
+
+      // 전부 실패했을 때만 사유를 띄운다(비로그인이면 다섯 개가 나란히 401 이다).
+      // 일부만 실패하면 성공한 카테고리는 그대로 보여주는 게 낫다 — 카드 전체를 지울 이유가 없다.
+      const ok = results.filter(r => r.items)
+      if (ok.length === 0) { setPopularError(results[0]?.message || '인기글을 불러오지 못했습니다.'); return }
+      setPopularError('')
+      setPopular(Object.fromEntries(ok.map(r => [r.cat, r.items])))
     })()
     return () => { alive = false }
   }, [])
 
-  // 커뮤니티 통계 — '오늘 게시글'과 '전체 회원'은 서버가 세 준 값을 그대로 읽는다.
-  // 프론트에서 셀 수 없기 때문이다: 목록은 페이지 단위라 오늘 쓴 글이 한 페이지 안에 다 들어온다는
-  // 보장이 없고(모자라면 조용히 작은 숫자가 나온다), 회원 수는 목록 조회 자체가 관리자 전용이다.
-  //
-  // 값의 출처는 GET /admin/dashboard/summary 하나뿐인데 이 주소가 ADMIN 전용이라,
-  // 일반 사용자에게는 여전히 '-' 로 남는다. 같은 숫자를 일반 권한으로 여는 엔드포인트를 백엔드에 요청해 뒀다.
-  useEffect(() => {
-    if (user?.role !== 'ADMIN') { setStats({ todayPosts: null, totalMembers: null }); return }
-    let alive = true
-    ;(async () => {
-      try {
-        const token = localStorage.getItem('accessToken')
-        const res = await fetch('/admin/dashboard/summary', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-        const json = await readEnvelope(res)
-        if (!alive || !json.success || !json.data) return
-        setStats({ todayPosts: json.data.todayPosts ?? null, totalMembers: json.data.totalUsers ?? null })
-      } catch { /* 통계는 부가 정보 — 실패하면 '-' 로 남는다 */ }
-    })()
-    return () => { alive = false }
-  }, [user?.role])
+  // 그릴 그룹만 순서대로 추린다. 빈 카테고리는 배지만 덩그러니 남으므로 뺀다.
+  // 데스크탑은 서버가 준 5개를 다 쓴다(우측 컬럼을 채우는 게 목적). 모바일은 이 카드가 피드 아래로
+  // 내려오는 자리라 5개씩 5그룹이면 스크롤이 25줄 늘어난다 — 3개씩만 보여준다.
+  const popularGroups = POPULAR_CATEGORIES
+    .map(cat => ({ cat, items: (popular[cat] ?? []).slice(0, isMobile ? 3 : 5) }))
+    .filter(g => g.items.length > 0)
 
   const handleSearch = () => { setSearchKeyword(searchInput); setCurrentPage(0) }
   const handleCategoryChange = (cat) => { setActiveCategory(cat); setCurrentPage(0); setSearchKeyword(''); setSearchInput('') }
@@ -402,41 +398,29 @@ export default function CommunityPage({ user, onLogout }) {
           ...(isMobile ? { borderTop: '1px solid var(--border)', paddingTop: 18, marginTop: 4 } : {}),
         }}>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 18 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}><Icon name="flame" size={15} color="var(--blue-primary)" /> 카테고리별 최신글</div>
-            {(summary.notices.length + summary.questions.length + summary.info.length) > 0 ? (
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}><Icon name="flame" size={15} color="var(--blue-primary)" /> 카테고리별 인기글</div>
+            {popularGroups.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {[
-                  { key: 'notices', label: '공지', cat: 'NOTICE', items: summary.notices },
-                  { key: 'questions', label: '질문', cat: 'QUESTION', items: summary.questions },
-                  { key: 'info', label: '정보', cat: 'INFO', items: summary.info },
-                ].filter(g => g.items.length > 0).map(g => (
-                  <div key={g.key}>
+                {popularGroups.map(g => (
+                  <div key={g.cat}>
                     <div style={{ marginBottom: 8 }}><CategoryBadge category={g.cat} /></div>
-                    {g.items.slice(0, 4).map(post => (
+                    {g.items.map(post => (
                       <div key={post.postId} onClick={() => handlePostClick(post.postId)} style={{ display: 'flex', gap: 8, marginBottom: 9, cursor: 'pointer', alignItems: 'baseline' }}>
                         {/* minWidth:0 — 긴 제목이 칸을 넘치지 않게. */}
                         <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{post.title}</div>
-                        <div style={{ flexShrink: 0, fontSize: 11, color: 'var(--text-muted)' }}><Icon name="eye" size={11} /> {post.viewCount}</div>
+                        {/* 조회수가 아니라 좋아요를 보여준다 — 이 카드의 순서를 만든 지표가 그것이라
+                            숫자가 내림차순으로 읽혀야 "왜 이 순서인지"가 보인다(본문 목록의 metricStyle 과 같은 원칙). */}
+                        <div style={{ flexShrink: 0, fontSize: 11, color: 'var(--text-muted)' }}><Icon name="heart" size={11} /> {post.likeCount}</div>
                       </div>
                     ))}
                   </div>
                 ))}
               </div>
-            ) : <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>데이터 준비 중입니다.</div>}
-          </div>
-
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: 18 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}><Icon name="bar-chart" size={15} color="var(--blue-primary)" /> 커뮤니티 통계</div>
-            {[
-              { label: '전체 게시글', value: totalPosts },
-              { label: '오늘 게시글', value: stats.todayPosts },
-              { label: '전체 회원', value: stats.totalMembers },
-            ].map(item => (
-              <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{item.label}</span>
-                <span style={{ fontSize: 16, fontWeight: 800, fontFamily: "'Inter',sans-serif" }}>{item.value != null ? item.value.toLocaleString() : '-'}</span>
+            ) : (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>
+                {popularError || '아직 등록된 글이 없습니다.'}
               </div>
-            ))}
+            )}
           </div>
         </aside>
       </div>
