@@ -78,7 +78,8 @@ const fmtShort = (iso) => {
 }
 
 // 신고 위치 미니 지도. 카카오 SDK는 index.html에서 이미 불러온다.
-function MiniMap({ lat, lng, height }) {
+// grow=true 면 높이를 고정하지 않고 남은 세로 공간을 채운다(데스크탑 상세 패널).
+function MiniMap({ lat, lng, height, grow = false }) {
   const boxRef = useRef(null)
   const mapRef = useRef(null)
   const markerRef = useRef(null)
@@ -112,7 +113,31 @@ function MiniMap({ lat, lng, height }) {
     return () => { alive = false; clearInterval(timer) }
   }, [lat, lng])
 
-  return <div ref={boxRef} style={{ width: '100%', height, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg)' }} />
+  // 높이가 고정이 아니면(grow) 박스 크기가 나중에 확정되거나 창 크기에 따라 바뀐다.
+  // 카카오 지도는 컨테이너 크기 변화를 스스로 알지 못해 relayout 없이는 타일이 잘린 채 남는다.
+  useEffect(() => {
+    if (!grow || !boxRef.current || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      if (!mapRef.current) return
+      const center = mapRef.current.getCenter()
+      mapRef.current.relayout()
+      mapRef.current.setCenter(center)  // relayout 은 중심을 좌상단 기준으로 밀어 놓는다
+    })
+    ro.observe(boxRef.current)
+    return () => ro.disconnect()
+  }, [grow])
+
+  return (
+    <div
+      ref={boxRef}
+      style={{
+        width: '100%',
+        // minHeight 는 바닥선이다 — 창이 낮아도 이 아래로는 눌리지 않고 패널이 스크롤된다.
+        ...(grow ? { flex: '1 1 auto', minHeight: 260 } : { height }),
+        borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg)',
+      }}
+    />
+  )
 }
 
 function Empty({ text }) {
@@ -357,8 +382,14 @@ export default function NotificationsPage({ user, onLogout }) {
   )
 
   // ── 상세: 긴급신고 ────────────────────────────────────
+  // 데스크탑 상세는 오른쪽 패널 높이를 꽉 채운다. 그래야 아래 남는 여백을 지도가 가져갈 수 있다.
+  // 모바일은 페이지가 통째로 스크롤되므로 늘리지 않는다(지도만 화면을 잡아먹는다).
   const emergencyDetail = selected?.kind === 'emergency' && (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: isMobile ? '14px 14px 24px' : 20 }}>
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 14,
+      padding: isMobile ? '14px 14px 24px' : 20,
+      ...(isMobile ? null : { minHeight: '100%', boxSizing: 'border-box' }),
+    }}>
       <div>
         <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.3px' }}>{selected.title}</div>
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, fontFamily: "'Inter',sans-serif" }}>
@@ -398,8 +429,12 @@ export default function NotificationsPage({ user, onLogout }) {
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 700 }}>신고 위치</div>
+      {/* 지도가 있을 때만 늘린다 — 오류·로딩 문구만 든 칸이 세로로 길게 벌어지면 그것대로 어색하다. */}
+      <div style={{
+        display: 'flex', flexDirection: 'column', gap: 8,
+        ...(isMobile || !shared ? null : { flex: '1 1 auto', minHeight: 0 }),
+      }}>
+        <div style={{ fontSize: 13.5, fontWeight: 700, flexShrink: 0 }}>신고 위치</div>
 
         {sharedLoading && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>위치를 불러오는 중…</div>}
 
@@ -423,8 +458,9 @@ export default function NotificationsPage({ user, onLogout }) {
 
         {!sharedLoading && shared && (
           <>
-            <MiniMap lat={shared.latitude} lng={shared.longitude} height={isMobile ? 220 : 280} />
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 2 }}>
+            <MiniMap lat={shared.latitude} lng={shared.longitude} height={220} grow={!isMobile} />
+            {/* 지도 아래 정보 줄은 지도가 늘어나도 눌리지 않게 고정 높이로 둔다. */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 2, flexShrink: 0 }}>
               <span style={{ fontSize: 13, fontWeight: 700 }}>{shared.reporterNickname ?? '-'}</span>
               <span style={{
                 fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 7,
@@ -440,11 +476,11 @@ export default function NotificationsPage({ user, onLogout }) {
                 {fmtFull(shared.reportedAt)}
               </span>
             </div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: "'Inter',sans-serif" }}>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: "'Inter',sans-serif", flexShrink: 0 }}>
               {Number(shared.latitude).toFixed(5)}, {Number(shared.longitude).toFixed(5)}
             </div>
             {shared.description && (
-              <div style={{ fontSize: 13, marginTop: 2 }}>{shared.description}</div>
+              <div style={{ fontSize: 13, marginTop: 2, flexShrink: 0 }}>{shared.description}</div>
             )}
           </>
         )}

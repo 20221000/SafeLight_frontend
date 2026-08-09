@@ -69,22 +69,19 @@ export default function FriendsPage({ user, onLogout }) {
 
   useEffect(() => { load() }, [load])
 
-  // 친구 요청: POST /friends/requests 는 targetUserId(숫자)를 받음.
-  // 닉네임→userId 검색 엔드포인트가 없어 현재는 사용자 ID 직접 입력(임시).
+  // 친구 요청: POST /friends/requests 는 targetUsername(아이디) 또는 targetUserId(숫자)를 받는다.
+  // 아이디 쪽만 쓴다 — 숫자 userId 는 사용자가 알 방법이 없다(내 정보 화면에서도 더는 노출하지 않는다).
+  // 두 필드를 같이 보내면 백엔드가 400 으로 거절하므로 반드시 하나만 싣는다.
   const handleAddFriend = async () => {
-    const v = search.trim()
-    if (!v) { alert('친구의 사용자 ID를 입력해주세요.'); return }
-    const targetUserId = Number(v)
-    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
-      alert('현재는 사용자 ID(숫자)로만 친구 요청이 가능합니다. (닉네임 검색은 준비 중)')
-      return
-    }
+    const targetUsername = search.trim()
+    if (!targetUsername) { alert('친구의 아이디를 입력해주세요.'); return }
     try {
-      await apiSend('/friends/requests', 'POST', { targetUserId })
+      await apiSend('/friends/requests', 'POST', { targetUsername })
       alert('친구 요청을 보냈습니다.')
       setSearch('')
       load()
     } catch (e) {
+      // 없는 아이디면 '존재하지 않는 아이디입니다.' 가 그대로 올라온다.
       alert('친구 요청 실패: ' + e.message)
     }
   }
@@ -136,18 +133,18 @@ export default function FriendsPage({ user, onLogout }) {
           </div>
         </div>
 
-        {/* 친구 추가 (현재는 사용자 ID로 요청 — 닉네임 검색 API 준비 중) */}
+        {/* 친구 추가 — 상대방 아이디(username)로 요청 */}
         <div>
           <div style={{ display: 'flex', gap: 10 }}>
             {/* minWidth:0 필수 — flex 기본 min-width:auto 면 검색칸이 고유폭(약 179px) 아래로
                 줄지 못해 좁은 화면에서 '친구 요청' 버튼을 화면 밖으로 밀어낸다. */}
             <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 9, height: 46, padding: '0 14px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12 }}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" /></svg>
-              <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddFriend()} placeholder="친구의 사용자 ID(숫자) 입력" style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 14, color: 'var(--text-strong)', fontFamily: 'inherit' }} />
+              <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddFriend()} placeholder="친구의 아이디 입력" style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 14, color: 'var(--text-strong)', fontFamily: 'inherit' }} />
             </div>
             <button onClick={handleAddFriend} style={{ height: 46, padding: '0 20px', border: 'none', borderRadius: 12, background: 'var(--blue-primary)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>친구 요청</button>
           </div>
-          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6 }}>* 상대방의 <b>내 정보 &gt; ID</b>에 표시된 숫자로 친구 요청을 보낼 수 있습니다.</div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6 }}>* 로그인할 때 쓰는 <b>아이디</b>로 요청합니다. 닉네임이 아닙니다.</div>
         </div>
 
         {/* 탭 */}
@@ -173,7 +170,7 @@ export default function FriendsPage({ user, onLogout }) {
             <Empty text="불러오는 중..." />
           ) : tab === '친구 목록' ? (
             friends.length === 0
-              ? <Empty text="아직 친구가 없습니다. 위에서 사용자 ID로 요청을 보내보세요." />
+              ? <Empty text="아직 친구가 없습니다. 위에서 아이디로 요청을 보내보세요." />
               : friends.map(f => {
                 // 쪽지 쓰기 — 쪽지함으로 이동하며 받는 사람을 미리 지정한다.
                 // 모바일은 행이 좁아 아이콘만 남긴다.

@@ -5,7 +5,7 @@ import ConfirmDialog from '../components/layout/ConfirmDialog'
 import RowMenu from '../components/Admin/RowMenu'
 import { adminStyles as s, LEVEL_STYLE, STATUS_STYLE } from '../components/Admin/adminStyles'
 import { apiSend } from '../utils/adminApi'
-import { fetchReportPage, fetchReportStats, fetchAllReports } from '../utils/reportsAggregate'
+import { fetchReportPage, fetchReportStats } from '../utils/reportsAggregate'
 import useIsMobile from '../hooks/useIsMobile'
 import Icon from '../components/Icon'
 
@@ -46,9 +46,12 @@ export default function AdminReportPage({ user, onLogout }) {
   // 기간을 거꾸로 넣으면 백엔드가 400을 던지므로 미리 막는다.
   const invalidRange = Boolean(startDate && endDate && startDate > endDate)
 
+  // 검색어도 서버 필터의 일부다(2026-08-09 백엔드에 keyword 추가).
+  // 예전엔 파라미터가 없어서 검색할 때만 전체를 긁어와 자바스크립트로 걸렀는데,
+  // 그러면 한 페이지 안에서만 맞는 결과라 건수도 페이지네이션도 어긋났다.
   const filters = useMemo(
-    () => ({ statusFilter, startDate, endDate }),
-    [statusFilter, startDate, endDate],
+    () => ({ statusFilter, startDate, endDate, keyword: searchTerm }),
+    [statusFilter, startDate, endDate, searchTerm],
   )
 
   // 타이핑 한 글자마다 서버를 때리지 않도록 검색어만 디바운스한다.
@@ -63,23 +66,15 @@ export default function AdminReportPage({ user, onLogout }) {
     setLoading(true)
     setError(null)
     try {
-      if (searchTerm) {
-        // 백엔드 GET /admin/emergency-reports 에는 키워드 파라미터가 없다.
-        // 검색할 때만 현재 필터에 걸린 전체를 받아 와 아래에서 거른다.
-        const all = await fetchAllReports(filters)
-        setReports(all)
-        setPageInfo({ page: 0, totalPages: 1, totalElements: all.length, last: true })
-      } else {
-        const res = await fetchReportPage(filters, page, PAGE_SIZE)
-        setReports(prev => (append ? [...prev, ...res.reports] : res.reports))
-        setPageInfo({ page: res.page, totalPages: res.totalPages, totalElements: res.totalElements, last: res.last })
-      }
+      const res = await fetchReportPage(filters, page, PAGE_SIZE)
+      setReports(prev => (append ? [...prev, ...res.reports] : res.reports))
+      setPageInfo({ page: res.page, totalPages: res.totalPages, totalElements: res.totalElements, last: res.last })
     } catch (e) {
       setError(e.message)
     } finally {
       setLoading(false)
     }
-  }, [user, filters, searchTerm, invalidRange])
+  }, [user, filters, invalidRange])
 
   // KPI 는 목록과 따로 센다. size=1 요청 4번이라 페이지를 넘겨도 숫자가 흔들리지 않는다.
   const loadStats = useCallback(async () => {
@@ -146,16 +141,8 @@ export default function AdminReportPage({ user, onLogout }) {
   }
   const hasFilter = Boolean(statusFilter !== 'ALL' || startDate || endDate || search)
 
-  // 상태·기간은 서버가 이미 걸러 보냈다. 여기서 거르는 건 키워드뿐이다.
-  const filtered = useMemo(() => {
-    const q = searchTerm.toLowerCase()
-    if (!q) return reports
-    return reports.filter(r => [r.nickname, r.description, r.reportId]
-      .some(v => String(v ?? '').toLowerCase().includes(q)))
-  }, [reports, searchTerm])
-
-  // 검색 중에는 걸러낸 결과 수를, 평소에는 서버가 알려준 전체 건수를 보여준다.
-  const shownCount = searchTerm ? filtered.length : pageInfo.totalElements
+  // 상태·기간·키워드 모두 서버가 걸러 보낸다. 화면에서 따로 거르지 않는다.
+  const shownCount = pageInfo.totalElements
 
   const emptyText = loading
     ? '불러오는 중…'
@@ -216,7 +203,7 @@ export default function AdminReportPage({ user, onLogout }) {
 
         <input
           style={{ ...s.searchInput, maxWidth: '100%' }}
-          placeholder="신고자 / 내용 / 신고번호 검색…"
+          placeholder="신고자 닉네임 · 아이디 / 신고 내용 검색…"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -255,12 +242,12 @@ export default function AdminReportPage({ user, onLogout }) {
 
         {/* 신고 카드 리스트 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {filtered.length === 0 && (
+          {reports.length === 0 && (
             <div style={{ ...s.card, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
               {emptyText}
             </div>
           )}
-          {filtered.map(r => {
+          {reports.map(r => {
             const st = STATUS_STYLE[r.reportStatus] ?? { label: r.reportStatus, bg: 'var(--border)', color: 'var(--text-muted)' }
             const lv = LEVEL_STYLE[r.dangerLevel]
             return (
@@ -323,8 +310,8 @@ export default function AdminReportPage({ user, onLogout }) {
         </div>
 
         {/* 더 보기 — 카드 리스트라 페이지 번호보다 이어 붙이는 쪽이 맞다.
-            검색 중에는 이미 전체를 받아 왔으므로 감춘다. */}
-        {!searchTerm && !pageInfo.last && (
+            검색 결과도 서버가 페이지로 나눠 주므로 검색 중에도 그대로 쓴다. */}
+        {!pageInfo.last && (
           <button
             onClick={() => load(pageInfo.page + 1, { append: true })}
             disabled={loading}
@@ -333,13 +320,13 @@ export default function AdminReportPage({ user, onLogout }) {
               border: '1px solid var(--border)', background: 'var(--surface)',
               color: 'var(--text-strong)', fontSize: 13.5, fontWeight: 700,
             }}
-          >{loading ? '불러오는 중…' : `더 보기 (${filtered.length} / ${shownCount})`}</button>
+          >{loading ? '불러오는 중…' : `더 보기 (${reports.length} / ${shownCount})`}</button>
         )}
 
         <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>
           {searchTerm
-            ? `검색 결과 ${shownCount}건 · 현재 필터 전체에서 검색`
-            : `${filtered.length} / ${shownCount}건`}
+            ? `'${searchTerm}' 검색 결과 ${reports.length} / ${shownCount}건`
+            : `${reports.length} / ${shownCount}건`}
         </div>
 
         {sheetReport && (
@@ -427,7 +414,7 @@ export default function AdminReportPage({ user, onLogout }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
         <input
           style={s.searchInput}
-          placeholder="신고자 / 내용 / 신고번호 검색…"
+          placeholder="신고자 닉네임 · 아이디 / 신고 내용 검색…"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -466,7 +453,7 @@ export default function AdminReportPage({ user, onLogout }) {
               .map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
           </thead>
           <tbody>
-            {filtered.length > 0 ? filtered.map(r => (
+            {reports.length > 0 ? reports.map(r => (
               <tr key={r.reportId} style={s.tr}>
                 <td style={s.td}>#ER-{r.reportId}</td>
                 <td style={s.td}>{r.nickname ?? '-'}</td>

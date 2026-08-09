@@ -1,13 +1,8 @@
 // 관리자 신고 조회 공용 유틸
 // GET /admin/emergency-reports 는 status / isFalseReport / dangerZoneId / reporterId /
-// startDate / endDate 를 서버에서 걸러준다. 예전에는 이 파라미터를 하나도 안 쓰고
+// keyword / startDate / endDate 를 서버에서 걸러준다. 예전에는 이 파라미터를 하나도 안 쓰고
 // 전체를 긁어와 자바스크립트로 걸렀던 탓에 신고가 쌓일수록 관리자 화면이 느려졌다.
 import { apiGet } from './adminApi'
-
-// 백엔드 AdminEmergencyReportService.MAX_PAGE_SIZE 가 100이라 그 이상은 400이다.
-export const MAX_PAGE_SIZE = 100
-// 잘못된 last 값으로 무한 루프에 빠지지 않도록 상한을 둔다.
-const MAX_PAGES = 50
 
 // <input type="date"> 는 '2026-08-06' 을 주지만 백엔드는 ISO_DATE_TIME 을 요구한다.
 // 종료일은 그 날 하루를 통째로 포함해야 하므로 23:59:59 로 맞춘다.
@@ -25,13 +20,15 @@ function statusParams(statusFilter) {
 
 // 필터 객체 → 쿼리스트링. 빈 값은 아예 보내지 않는다(백엔드가 null 을 '조건 없음'으로 본다).
 function buildQuery(filters = {}, page = 0, size = 20) {
-  const { statusFilter, startDate, endDate, dangerZoneId, reporterId } = filters
+  const { statusFilter, startDate, endDate, dangerZoneId, reporterId, keyword } = filters
   const params = {
     page,
     size,
     ...statusParams(statusFilter),
     dangerZoneId: dangerZoneId ?? null,
     reporterId: reporterId ?? null,
+    // 서버가 신고 내용(description)·신고자 닉네임·신고자 아이디를 대소문자 무시하고 LIKE 로 훑는다.
+    keyword: keyword || null,
     startDate: startOfDay(startDate),
     endDate: endOfDay(endDate),
   }
@@ -75,19 +72,4 @@ export async function fetchReportStats(filters = {}) {
     fetchReportCount({ ...base, statusFilter: 'FALSE' }),
   ])
   return { total, received, resolved, falseCount }
-}
-
-// 필터에 걸린 전체를 이어 받는다.
-// 백엔드에 키워드 검색 파라미터가 없어서, 텍스트 검색을 할 때만 이 경로를 쓴다.
-export async function fetchAllReports(filters = {}) {
-  const all = []
-
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const res = await fetchReportPage(filters, page, MAX_PAGE_SIZE)
-    all.push(...res.reports)
-    // 백엔드가 reportedAt DESC 로 정렬해 내려주므로 여기서 다시 정렬하지 않는다.
-    if (res.reports.length === 0 || res.last) break
-  }
-
-  return all
 }

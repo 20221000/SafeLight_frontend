@@ -80,8 +80,10 @@ export default function CommunityPage({ user, onLogout }) {
       if (searchKeyword) {
         url = `/posts/search?keyword=${encodeURIComponent(searchKeyword)}&page=${currentPage}&size=${pageSize}&sort=${sort}`
       } else if (activeCategory === '전체') {
-        // getCommunity 는 sort 파라미터가 없다 — createdAt DESC 고정이라 최신순만 가능하다.
-        url = `/posts/community?page=${currentPage}&size=${pageSize}`
+        // getCommunity 도 sort 를 받는다(2026-08-09 백엔드 반영). 상단 공지 3개는
+        // findTop3ByIsNoticeTrueOrderByCreatedAtDesc 라 정렬과 무관하게 항상 최신순이고,
+        // sort 는 그 아래 일반글 목록에만 걸린다.
+        url = `/posts/community?page=${currentPage}&size=${pageSize}&sort=${sort}`
       } else {
         url = `/posts?category=${CATEGORY_MAP[activeCategory]}&page=${currentPage}&size=${pageSize}&sort=${sort}`
       }
@@ -110,11 +112,7 @@ export default function CommunityPage({ user, onLogout }) {
 
   useEffect(() => { fetchPosts() }, [activeCategory, currentPage, searchKeyword, pageSize, sort])
 
-  // '전체' 탭(검색 없음)은 /posts/community 를 쓰는데 이 엔드포인트에 sort 가 없다.
-  // 정렬을 지어내지 않고 컨트롤을 잠근 뒤 사유를 알린다.
-  const sortDisabled = !searchKeyword && activeCategory === '전체'
-  const effectiveSort = sortDisabled ? 'latest' : sort
-  const metricKey = sortMetric(effectiveSort)
+  const metricKey = sortMetric(sort)
 
   // 바깥을 누르면 드롭다운을 닫는다 — 반드시 데스크탑에서만.
   // 모바일 시트는 sortRef 바깥(페이지 최상단)에 그려지므로, 이 핸들러가 켜져 있으면
@@ -288,20 +286,18 @@ export default function CommunityPage({ user, onLogout }) {
 
             <div ref={sortRef} style={{ position: 'relative' }}>
               <button
-                onClick={() => { if (!sortDisabled) setSortOpen(o => !o) }}
-                disabled={sortDisabled}
-                title={sortDisabled ? "'전체'는 최신순으로 고정입니다. 카테고리를 고르거나 검색하면 정렬할 수 있습니다." : '정렬 기준'}
+                onClick={() => setSortOpen(o => !o)}
+                title="정렬 기준"
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 12px',
                   borderRadius: 10, fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
                   border: `1px solid ${sortOpen ? 'var(--blue-primary)' : 'var(--border)'}`,
                   background: 'var(--surface)',
-                  color: sortDisabled ? 'var(--text-muted)' : sortOpen ? 'var(--blue-primary)' : 'var(--text-strong)',
-                  cursor: sortDisabled ? 'not-allowed' : 'pointer',
-                  opacity: sortDisabled ? 0.6 : 1,
+                  color: sortOpen ? 'var(--blue-primary)' : 'var(--text-strong)',
+                  cursor: 'pointer',
                 }}
               >
-                {sortLabel(effectiveSort)}
+                {sortLabel(sort)}
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ opacity: 0.7 }}>
                   <path d={sortOpen ? 'M18 15l-6-6-6 6' : 'M6 9l6 6 6-6'} />
                 </svg>
@@ -315,7 +311,7 @@ export default function CommunityPage({ user, onLogout }) {
                   boxShadow: '0 10px 28px rgba(15,23,42,.14)', padding: 6,
                 }}>
                   {SORT_OPTIONS.map(o => {
-                    const on = o.code === effectiveSort
+                    const on = o.code === sort
                     return (
                       <button
                         key={o.code}
@@ -432,7 +428,7 @@ export default function CommunityPage({ user, onLogout }) {
           title="정렬"
           actions={SORT_OPTIONS.map(o => ({
             label: o.label,
-            selected: o.code === effectiveSort,
+            selected: o.code === sort,
             onClick: () => changeSort(o.code),
           }))}
           onClose={() => setSortOpen(false)}

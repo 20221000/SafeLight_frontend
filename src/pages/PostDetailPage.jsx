@@ -213,8 +213,8 @@ export default function PostDetailPage({ user, onLogout }) {
     else alert(json.message || '답글 등록에 실패했습니다.')
   }
 
-  const handleCommentDelete = async (commentId) => {
-    if (!window.confirm('댓글을 삭제할까요?')) return
+  const handleCommentDelete = async (commentId, mine = true) => {
+    if (!window.confirm(deleteConfirmText(mine, '댓글'))) return
     const token = localStorage.getItem('accessToken')
     const res = await fetch(`/posts/${postId}/comments/${commentId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
     const json = await readEnvelope(res)
@@ -250,7 +250,7 @@ export default function PostDetailPage({ user, onLogout }) {
   }
 
   const handlePostDelete = async () => {
-    if (!window.confirm('게시글을 삭제할까요?')) return
+    if (!window.confirm(deleteConfirmText(isPostOwner, '게시글'))) return
     const token = localStorage.getItem('accessToken')
     const res = await fetch(`/posts/${postId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
     const json = await readEnvelope(res)
@@ -271,6 +271,18 @@ export default function PostDetailPage({ user, onLogout }) {
 
   const isNotice = post?.category === 'NOTICE'
 
+  // 관리자에게 열린 건 '삭제'뿐이다(백엔드 PostService.isOwnerOrAdmin — deletePost·deleteComment).
+  // 수정은 게시글·댓글 모두 작성자 검사를 그대로 둬서 관리자가 눌러도 403 이고,
+  // 첨부파일 개별 삭제(PostAttachmentService)도 글 작성자만이라 함께 열지 않는다.
+  const isAdmin = user?.role === 'ADMIN'
+  const isPostOwner = Boolean(user && post && user.userId === post.userId)
+  const canDeletePost = isPostOwner || Boolean(user && post && isAdmin)
+  const canDeleteComment = (c) => Boolean(user && (user.userId === c.userId || isAdmin))
+
+  // 남의 글을 지우는 건 내 글을 지우는 것과 무게가 다르다. 관리자 권한으로 지울 때는 그렇다고 말한다.
+  const deleteConfirmText = (mine, what) =>
+    mine ? `${what}을 삭제할까요?` : `다른 사용자의 ${what}입니다. 관리자 권한으로 삭제할까요?`
+
   return (
     <UserShell user={user} onLogout={onLogout} active="community">
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: isMobile ? '16px 16px 24px' : '26px 48px' }}>
@@ -278,9 +290,15 @@ export default function PostDetailPage({ user, onLogout }) {
           <button onClick={() => navigate('/community')} style={{ display: 'flex', alignItems: 'center', gap: 5, border: 'none', background: 'transparent', color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>목록으로
           </button>
-          {user && post && user.userId === post.userId && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => navigate(`/community/${postId}/edit`)} style={{ height: 36, padding: '0 14px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)', color: 'var(--text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>수정</button>
+          {canDeletePost && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* 남의 글에 뜬 삭제 버튼은 근거가 보여야 오작동으로 읽히지 않는다. */}
+              {!isPostOwner && (
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)' }}>관리자 권한</span>
+              )}
+              {isPostOwner && (
+                <button onClick={() => navigate(`/community/${postId}/edit`)} style={{ height: 36, padding: '0 14px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)', color: 'var(--text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>수정</button>
+              )}
               <button onClick={handlePostDelete} style={{ height: 36, padding: '0 14px', border: '1px solid var(--danger)', borderRadius: 10, background: 'var(--surface)', color: 'var(--danger)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>삭제</button>
             </div>
           )}
@@ -404,7 +422,7 @@ export default function PostDetailPage({ user, onLogout }) {
                             <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
                               {user && <button onClick={() => setReplyInputId(replyInputId === comment.commentId ? null : comment.commentId)} style={commentActionBtn('var(--text-muted)')}>답글</button>}
                               {user && user.userId === comment.userId && <button onClick={() => startEdit(comment)} style={commentActionBtn('var(--text-muted)')}>수정</button>}
-                              {user && user.userId === comment.userId && <button onClick={() => handleCommentDelete(comment.commentId)} style={commentActionBtn('var(--danger)')}>삭제</button>}
+                              {canDeleteComment(comment) && <button onClick={() => handleCommentDelete(comment.commentId, user.userId === comment.userId)} style={commentActionBtn('var(--danger)')}>삭제</button>}
                             </div>
                           </>
                         )}
@@ -435,10 +453,10 @@ export default function PostDetailPage({ user, onLogout }) {
                           ) : (
                             <>
                               <div style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{reply.content}</div>
-                              {user && user.userId === reply.userId && (
+                              {canDeleteComment(reply) && (
                                 <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                                  <button onClick={() => startEdit(reply)} style={commentActionBtn('var(--text-muted)')}>수정</button>
-                                  <button onClick={() => handleCommentDelete(reply.commentId)} style={commentActionBtn('var(--danger)')}>삭제</button>
+                                  {user.userId === reply.userId && <button onClick={() => startEdit(reply)} style={commentActionBtn('var(--text-muted)')}>수정</button>}
+                                  <button onClick={() => handleCommentDelete(reply.commentId, user.userId === reply.userId)} style={commentActionBtn('var(--danger)')}>삭제</button>
                                 </div>
                               )}
                             </>
