@@ -66,7 +66,14 @@ export default function AdminDangerZonePage({ user, onLogout }) {
   const [levelSheetZone, setLevelSheetZone] = useState(null) // 모바일 '위험도 갱신' 시트 대상
   // 지도가 비추고 있는 구역. 신고 내역 모달(detail)과는 별개다 —
   // 목록에서 구역을 고르는 것은 '지도로 보여달라'는 뜻이고, 신고 내역은 따로 연다.
-  const [focusedId, setFocusedId] = useState(null)
+  //
+  // id 만 들고 있으면 같은 구역을 다시 눌렀을 때 상태가 그대로라 지도가 안 움직인다.
+  // 지도를 손으로 옮겨 놓고 그 구역을 다시 눌러 되돌리는 게 안 되고, 구역이 하나뿐이면
+  // 첫 클릭 뒤로 아예 반응이 없는 것처럼 보인다. 그래서 누를 때마다 seq 를 올려
+  // '무엇을 골랐나'와 '몇 번째 요청인가'를 함께 넘긴다.
+  const [focus, setFocus] = useState({ id: null, seq: 0 })
+  const focusedId = focus.id
+  const focusZone = useCallback((id) => setFocus(f => ({ id, seq: f.seq + 1 })), [])
   const [newCount, setNewCount] = useState(0)                // 이번 주 신규 구역 수 (렌더 중 시각 계산 금지 → 로드 시점에 계산)
 
   const load = useCallback(async () => {
@@ -297,7 +304,8 @@ export default function AdminDangerZonePage({ user, onLogout }) {
             zones={zones}
             height={220}
             selectedId={focusedId}
-            onSelect={z => setFocusedId(z.dangerZoneId)}
+            focusSeq={focus.seq}
+            onSelect={z => focusZone(z.dangerZoneId)}
             emptyText={loading ? '불러오는 중…' : '활성 위험구역이 없습니다.'}
           />
         </div>
@@ -319,7 +327,7 @@ export default function AdminDangerZonePage({ user, onLogout }) {
                 {/* 상단(구역 요약)을 누르면 위 지도가 이 구역으로 이동한다.
                     신고 내역은 아래 버튼으로 따로 연다 — 모달이 뜨면 지도가 가려진다. */}
                 <button
-                  onClick={() => setFocusedId(z.dangerZoneId)}
+                  onClick={() => focusZone(z.dangerZoneId)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: 0,
                     border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
@@ -420,7 +428,8 @@ export default function AdminDangerZonePage({ user, onLogout }) {
             zones={zones}
             height="100%"
             selectedId={focusedId}
-            onSelect={z => setFocusedId(z.dangerZoneId)}
+            focusSeq={focus.seq}
+            onSelect={z => focusZone(z.dangerZoneId)}
             emptyText={loading ? '불러오는 중…' : '활성 위험구역이 없습니다.'}
           />
         </div>
@@ -456,7 +465,7 @@ export default function AdminDangerZonePage({ user, onLogout }) {
               // 칸은 아래에서 전파를 끊는다 — 그것들은 지도 이동이 아니라 각자의 일을 한다.
               <tr
                 key={z.dangerZoneId}
-                onClick={() => setFocusedId(z.dangerZoneId)}
+                onClick={() => focusZone(z.dangerZoneId)}
                 title="지도에서 보기"
                 style={{
                   ...s.tr,

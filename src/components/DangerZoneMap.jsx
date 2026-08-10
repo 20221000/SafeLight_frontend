@@ -18,6 +18,11 @@ export default function DangerZoneMap({
   zones = [],
   height = 340,
   selectedId = null,
+  // 카메라를 다시 맞춰 달라는 '요청 번호'. 부모가 구역을 고를 때마다 1씩 올린다.
+  // selectedId 만 보면 같은 구역을 두 번 누를 때 값이 그대로라 카메라가 안 움직인다 —
+  // 지도를 손으로 옮겨 놓고 그 구역을 다시 눌러 제자리로 돌아오는 게 안 됐다.
+  // 구역이 하나뿐인 화면에서는 첫 클릭 뒤로 영영 안 움직이는 것으로 보인다.
+  focusSeq = 0,
   onSelect,
   emptyText = '활성 위험구역이 없습니다.',
 }) {
@@ -139,9 +144,10 @@ export default function DangerZoneMap({
     mapRef.current.setBounds(b, 40, 40, 40, 40)
     // 반경이 작으면 최대 배율까지 붙어 주변 지형이 안 보인다. 한 칸 물러선다.
     if (mapRef.current.getLevel() < 4) mapRef.current.setLevel(4)
-    // focus 객체는 매 렌더 새로 찾은 것이라 focusKey 로만 반응한다.
+    // focus 객체는 매 렌더 새로 찾은 것이라 키로만 반응한다.
+    // focusSeq 를 같이 보므로 같은 구역을 다시 눌러도 카메라가 제자리로 돌아온다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusKey])
+  }, [focusKey, focusSeq])
 
   // 컨테이너 크기가 바뀌면(창 크기·모바일 주소창) 타일이 잘린 채 남는다.
   useEffect(() => {
