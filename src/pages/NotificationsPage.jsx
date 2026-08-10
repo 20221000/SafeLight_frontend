@@ -13,12 +13,14 @@
 // 두 종류는 색으로 나눈다: 긴급은 빨강(사이렌), 쪽지는 파랑(봉투). 벨 아이콘도 같은 규칙이다.
 //
 // 데스크탑은 좌측 목록 + 우측 상세, 모바일은 목록 → 상세 전환(뒤로가기 버튼)으로 같은 데이터를 쓴다.
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import UserShell from '../components/layout/UserShell'
 import { TAB_BAR_HEIGHT } from '../components/layout/MobileTabBar'
 import useIsMobile from '../hooks/useIsMobile'
 import Icon from '../components/Icon'
+import MiniMap from '../components/MiniMap'
+import LocationText from '../components/LocationText'
 import { readEnvelope } from '../utils/apiResponse'
 import { notifyNotificationsChanged } from '../hooks/useUnreadNotifications'
 
@@ -75,69 +77,6 @@ const fmtShort = (iso) => {
   const s = String(iso ?? '')
   if (s.length < 10) return ''
   return s.slice(0, 10) === new Date().toISOString().slice(0, 10) ? s.slice(11, 16) : s.slice(5, 10)
-}
-
-// 신고 위치 미니 지도. 카카오 SDK는 index.html에서 이미 불러온다.
-// grow=true 면 높이를 고정하지 않고 남은 세로 공간을 채운다(데스크탑 상세 패널).
-function MiniMap({ lat, lng, height, grow = false }) {
-  const boxRef = useRef(null)
-  const mapRef = useRef(null)
-  const markerRef = useRef(null)
-
-  useEffect(() => {
-    if (lat == null || lng == null) return
-    let alive = true
-
-    const draw = () => {
-      if (!alive || !boxRef.current || !window.kakao?.maps) return
-      const center = new window.kakao.maps.LatLng(lat, lng)
-
-      if (!mapRef.current) {
-        mapRef.current = new window.kakao.maps.Map(boxRef.current, { center, level: 4 })
-      } else {
-        mapRef.current.relayout()
-        mapRef.current.setCenter(center)
-      }
-      // 위치가 바뀌면 이전 마커를 걷어낸다 — 안 그러면 지도에 마커가 쌓인다.
-      if (markerRef.current) markerRef.current.setMap(null)
-      markerRef.current = new window.kakao.maps.Marker({ position: center, map: mapRef.current })
-    }
-
-    if (window.kakao?.maps) {
-      draw()
-      return () => { alive = false }
-    }
-    const timer = setInterval(() => {
-      if (window.kakao?.maps) { clearInterval(timer); draw() }
-    }, 300)
-    return () => { alive = false; clearInterval(timer) }
-  }, [lat, lng])
-
-  // 높이가 고정이 아니면(grow) 박스 크기가 나중에 확정되거나 창 크기에 따라 바뀐다.
-  // 카카오 지도는 컨테이너 크기 변화를 스스로 알지 못해 relayout 없이는 타일이 잘린 채 남는다.
-  useEffect(() => {
-    if (!grow || !boxRef.current || typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(() => {
-      if (!mapRef.current) return
-      const center = mapRef.current.getCenter()
-      mapRef.current.relayout()
-      mapRef.current.setCenter(center)  // relayout 은 중심을 좌상단 기준으로 밀어 놓는다
-    })
-    ro.observe(boxRef.current)
-    return () => ro.disconnect()
-  }, [grow])
-
-  return (
-    <div
-      ref={boxRef}
-      style={{
-        width: '100%',
-        // minHeight 는 바닥선이다 — 창이 낮아도 이 아래로는 눌리지 않고 패널이 스크롤된다.
-        ...(grow ? { flex: '1 1 auto', minHeight: 260 } : { height }),
-        borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg)',
-      }}
-    />
-  )
 }
 
 function Empty({ text }) {
@@ -476,8 +415,9 @@ export default function NotificationsPage({ user, onLogout }) {
                 {fmtFull(shared.reportedAt)}
               </span>
             </div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: "'Inter',sans-serif", flexShrink: 0 }}>
-              {Number(shared.latitude).toFixed(5)}, {Number(shared.longitude).toFixed(5)}
+            {/* 좌표만 찍어 두면 친구가 어디에 있는지 알 수 없다. 주소를 앞세우고 좌표는 옆에 남긴다. */}
+            <div style={{ flexShrink: 0 }}>
+              <LocationText lat={shared.latitude} lng={shared.longitude} addressSize={13.5} coordSize={11.5} />
             </div>
             {shared.description && (
               <div style={{ fontSize: 13, marginTop: 2, flexShrink: 0 }}>{shared.description}</div>

@@ -10,6 +10,7 @@ import { readEnvelope } from '../utils/apiResponse'
 // 모르는 값이면 배지를 아예 그리지 않는다. 예전엔 INFO 로 떨어뜨렸는데,
 // GET /posts/{id}(PostDetailResponse)에 category 필드가 없어서 실제로는 모든 글이 '정보'로 찍혔다
 // — 공지·질문·팁·안전신고 글을 열어도 '정보' 였다. 없는 값을 그럴듯하게 메우느니 비워 둔다.
+// 2026-08-09 백엔드가 category 를 내려주기 시작해 지금은 정상 표시된다. 폴백은 되살리지 말 것.
 function CategoryBadge({ category }) {
   const c = POST_CATEGORY[category]
   if (!c) return null

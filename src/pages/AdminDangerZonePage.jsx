@@ -1,11 +1,22 @@
 import { useState, useEffect, useCallback } from 'react'
 import AdminShell, { notifyAdminReportsChanged } from '../components/layout/AdminShell'
 import ActionSheet from '../components/layout/ActionSheet'
+import LocationText from '../components/LocationText'
+import DangerZoneMap from '../components/DangerZoneMap'
+import Icon from '../components/Icon'
 import { adminStyles as s, LEVEL_STYLE, STATUS_STYLE } from '../components/Admin/adminStyles'
 import { apiGet, apiSend } from '../utils/adminApi'
 import useIsMobile from '../hooks/useIsMobile'
 
 const LEVELS = ['LOW', 'MEDIUM', 'HIGH']
+
+// 데스크탑 2열이 화면 아래까지 쓰는 최소 높이. 이보다 낮은 창에서는 셸이 스크롤한다.
+const PANEL_MIN_H = 320
+// 목록이 표를 온전히 담는 데 필요한 최소 폭. 지도는 '남는 폭'이 아니라 이걸 뺀 나머지를 쓴다.
+// 퍼센트로 자르면 큰 모니터에서도 지도가 세로로 길어지는데(1920×1200 에서 0.7까지 갔다),
+// 이렇게 두면 자리가 있는 한 정사각형을 유지하고, 좁은 창에서만 세로로 조금 길어진다.
+const LIST_MIN_W = 620
+const MAP_MAX_W = `calc(100% - ${LIST_MIN_W + 16}px)`
 const fmtDateTime = (iso) => (iso ? String(iso).slice(0, 16).replace('T', ' ') : '-')
 
 // 위험구역은 SOS 로 만들어질 때 expiredAt = 생성시각 + 24시간 이 박힌다.
@@ -53,6 +64,9 @@ export default function AdminDangerZonePage({ user, onLogout }) {
   const [detail, setDetail] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [levelSheetZone, setLevelSheetZone] = useState(null) // 모바일 '위험도 갱신' 시트 대상
+  // 지도가 비추고 있는 구역. 신고 내역 모달(detail)과는 별개다 —
+  // 목록에서 구역을 고르는 것은 '지도로 보여달라'는 뜻이고, 신고 내역은 따로 연다.
+  const [focusedId, setFocusedId] = useState(null)
   const [newCount, setNewCount] = useState(0)                // 이번 주 신규 구역 수 (렌더 중 시각 계산 금지 → 로드 시점에 계산)
 
   const load = useCallback(async () => {
@@ -135,7 +149,11 @@ export default function AdminDangerZonePage({ user, onLogout }) {
   }
 
   const markFalse = async (report) => {
-    if (!window.confirm(`신고 #${report.reportId}을(를) 허위신고로 처리할까요?`)) return
+    if (!window.confirm(
+      `신고 #${report.reportId}을(를) 허위신고로 처리할까요?\n\n`
+      + '신고자의 허위신고 횟수가 1 올라가고, 누적 3회면 블랙리스트에 들어갑니다.\n'
+      + '잘못 눌렀다면 같은 자리에서 취소할 수 있습니다.',
+    )) return
     try {
       await apiSend(`/emergency-reports/${report.reportId}/false-report`, 'PATCH')
       await refreshDetail(detail.dangerZoneId)
@@ -146,6 +164,27 @@ export default function AdminDangerZonePage({ user, onLogout }) {
       alert('허위신고 처리 실패: ' + e.message)
     }
   }
+
+  // 되돌리기는 전용 경로로만 된다. PATCH /status 로 RECEIVED 를 보내면 서버가 400 을 던진다
+  // — 상태 enum 만 바꿔서는 신고자 벌점·블랙리스트가 그대로 남기 때문이다.
+  const cancelFalse = async (report) => {
+    if (!window.confirm(
+      `신고 #${report.reportId}의 허위신고를 취소할까요?\n\n`
+      + '상태가 접수됨으로 돌아가고, 신고자의 허위신고 횟수가 1 내려갑니다.\n'
+      + '위험구역은 신고 후 24시간이 지났으면 다시 살아나지 않습니다.',
+    )) return
+    try {
+      await apiSend(`/emergency-reports/${report.reportId}/false-report/cancel`, 'PATCH')
+      await refreshDetail(detail.dangerZoneId)
+      await load()
+      notifyAdminReportsChanged()
+    } catch (e) {
+      alert('허위신고 취소 실패: ' + e.message)
+    }
+  }
+
+  // 인라인 스타일에는 :disabled 가 없다. 회색 처리를 직접 주지 않으면 못 누르는 버튼이 멀쩡해 보인다.
+  const dim = (base, off) => (off ? { ...base, opacity: 0.45, cursor: 'default' } : base)
 
   // 신고 내역 모달은 데스크탑/모바일 공용
   const detailModal = detail && (
@@ -185,16 +224,36 @@ export default function AdminDangerZonePage({ user, onLogout }) {
                       <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{fmtDateTime(r.reportedAt)}</span>
                     </div>
                     {r.description && <div style={{ color: 'var(--text-strong)', fontSize: '12px', marginBottom: '4px' }}>{r.description}</div>}
-                    <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginBottom: '8px' }}>
-                      위도 {r.latitude}, 경도 {r.longitude}
-                      {r.nearestCctv ? ` · 인근 CCTV: ${r.nearestCctv.cctvName ?? r.nearestCctv.cctvId}` : ''}
+                    {/* 예전엔 '위도 37.5..., 경도 127.0...' 이라 어디인지 알 수 없었다.
+                        주소를 앞세우고 좌표는 옆에 작게 남긴다. 신고 관리 표와 같은 규칙이다. */}
+                    <div style={{ marginBottom: '8px' }}>
+                      <LocationText lat={r.latitude} lng={r.longitude} addressSize={12} coordSize={11} />
+                      {r.nearestCctv && (
+                        <span style={{ color: 'var(--text-muted)', fontSize: '11px', marginLeft: 7 }}>
+                          · 인근 CCTV: {r.nearestCctv.cctvName ?? r.nearestCctv.cctvId}
+                        </span>
+                      )}
                     </div>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <button style={s.btnOrange} onClick={() => setReportStatus(r, 'RECEIVED')} disabled={r.reportStatus === 'RECEIVED' || r.isFalseReport}>접수됨</button>
-                      <button style={s.btnMint} onClick={() => setReportStatus(r, 'RESOLVED')} disabled={r.reportStatus === 'RESOLVED' || r.isFalseReport}>해결완료</button>
-                      <button style={s.btnRed} onClick={() => markFalse(r)} disabled={r.isFalseReport}>
-                        {r.isFalseReport ? '허위신고됨' : '허위신고 처리'}
-                      </button>
+                    {/* 허위신고로 확정된 건은 상태 두 개가 잠긴다 — 서버가 PATCH /status 를 400 으로 막는다.
+                        먼저 무엇을 해야 풀리는지 title 로 알려주고, 세 번째 버튼을 '취소'로 뒤집는다. */}
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      <button
+                        style={dim(s.btnOrange, r.reportStatus === 'RECEIVED' || r.isFalseReport)}
+                        onClick={() => setReportStatus(r, 'RECEIVED')}
+                        disabled={r.reportStatus === 'RECEIVED' || r.isFalseReport}
+                        title={r.isFalseReport ? '허위신고를 먼저 취소해주세요.' : undefined}
+                      >접수됨</button>
+                      <button
+                        style={dim(s.btnMint, r.reportStatus === 'RESOLVED' || r.isFalseReport)}
+                        onClick={() => setReportStatus(r, 'RESOLVED')}
+                        disabled={r.reportStatus === 'RESOLVED' || r.isFalseReport}
+                        title={r.isFalseReport ? '허위신고를 먼저 취소해주세요.' : undefined}
+                      >해결완료</button>
+                      {r.isFalseReport ? (
+                        <button style={s.btnGray} onClick={() => cancelFalse(r)}>허위신고 취소</button>
+                      ) : (
+                        <button style={s.btnRed} onClick={() => markFalse(r)}>허위신고 처리</button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -225,6 +284,24 @@ export default function AdminDangerZonePage({ user, onLogout }) {
       >
         {error && <div style={s.errorBox}>데이터를 불러오지 못했습니다: {error}</div>}
 
+        {/* 지도는 위에 붙박이로 두고 목록만 흘러간다 — 카드를 훑는 내내 지도가 보여야
+            "지금 고른 구역이 어디였지"를 다시 확인하러 올라올 일이 없다.
+            셸의 본문(main.ls-scroll)이 스크롤 컨테이너라 sticky 가 그 기준으로 붙는다.
+            좌우·상단 음수 마진은 본문 패딩까지 덮어, 밑으로 지나가는 카드가 비치지 않게 한다. */}
+        <div style={{
+          position: 'sticky', top: 0, zIndex: 4,
+          margin: '-16px -16px 0', padding: '16px 16px 12px',
+          background: 'var(--bg)',
+        }}>
+          <DangerZoneMap
+            zones={zones}
+            height={220}
+            selectedId={focusedId}
+            onSelect={z => setFocusedId(z.dangerZoneId)}
+            emptyText={loading ? '불러오는 중…' : '활성 위험구역이 없습니다.'}
+          />
+        </div>
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {zones.length === 0 && (
             <div style={{ ...s.card, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
@@ -235,11 +312,14 @@ export default function AdminDangerZonePage({ user, onLogout }) {
             const lv = LEVEL_STYLE[z.dangerLevel] ?? LEVEL_STYLE.LOW
             return (
               <div key={z.dangerZoneId} style={{
-                background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: '13px 14px',
+                background: 'var(--surface)', borderRadius: 14, padding: '13px 14px',
+                // 지금 지도가 비추고 있는 구역을 카드에서도 알아볼 수 있게 한다.
+                border: `1px solid ${focusedId === z.dangerZoneId ? 'var(--blue-primary)' : 'var(--border)'}`,
               }}>
-                {/* 상단(구역 요약)을 누르면 신고 내역 */}
+                {/* 상단(구역 요약)을 누르면 위 지도가 이 구역으로 이동한다.
+                    신고 내역은 아래 버튼으로 따로 연다 — 모달이 뜨면 지도가 가려진다. */}
                 <button
-                  onClick={() => openDetail(z)}
+                  onClick={() => setFocusedId(z.dangerZoneId)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: 0,
                     border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
@@ -264,10 +344,23 @@ export default function AdminDangerZonePage({ user, onLogout }) {
                       )}
                     </div>
                   </div>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6" /></svg>
+                  {/* 화살표(>)는 '다음 화면으로'로 읽힌다. 이 버튼이 하는 일은 지도 이동이라 핀으로 바꾼다. */}
+                  <Icon
+                    name="map-pin"
+                    size={18}
+                    color={focusedId === z.dangerZoneId ? 'var(--blue-primary)' : 'var(--text-muted)'}
+                  />
                 </button>
 
                 <div style={{ display: 'flex', gap: 8, marginTop: 12, paddingTop: 11, borderTop: '1px solid var(--border)' }}>
+                  <button
+                    onClick={() => openDetail(z)}
+                    style={{
+                      flex: 1, minHeight: 44, borderRadius: 11, cursor: 'pointer', fontFamily: 'inherit',
+                      border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-strong)',
+                      fontSize: 13.5, fontWeight: 700,
+                    }}
+                  >신고 내역</button>
                   <button
                     onClick={() => setLevelSheetZone(z)}
                     style={{
@@ -312,21 +405,72 @@ export default function AdminDangerZonePage({ user, onLogout }) {
     <AdminShell user={user} onLogout={onLogout} active="dangerzones" title="위험 구역" subtitle="긴급신고로 생성된 위험 구역을 관리합니다">
       {error && <div style={s.errorBox}>데이터를 불러오지 못했습니다: {error}</div>}
 
-      <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>활성 위험구역 {zones.length}개</div>
+      {/* 좌: 정사각형 지도 / 우: 목록.
+          예전엔 지도가 위, 표가 아래라 구역이 몇 개 없으면 화면 아래가 통째로 비었고
+          많으면 표를 보려고 지도를 스크롤 밖으로 밀어내야 했다. 나란히 두면 둘 다 안 생긴다.
+          바깥(main)이 아니라 목록만 스크롤한다 — 지도는 늘 제자리에 있다. */}
+      <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: PANEL_MIN_H }}>
+        {/* 정사각형 — 높이를 다 쓰고(height:100%) aspect-ratio 가 그만큼의 폭을 만든다.
+            화면이 커져도 아래가 남지 않는다. 다만 세로로 긴 창에서는 maxWidth 에 먼저 걸려
+            폭만 멈추고 높이는 계속 늘어나므로, 정사각형에서 세로로 조금 긴 형태까지만 변한다. */}
+        <div style={{
+          height: '100%', aspectRatio: '1 / 1', maxWidth: MAP_MAX_W, minWidth: 280, flexShrink: 0,
+        }}>
+          <DangerZoneMap
+            zones={zones}
+            height="100%"
+            selectedId={focusedId}
+            onSelect={z => setFocusedId(z.dangerZoneId)}
+            emptyText={loading ? '불러오는 중…' : '활성 위험구역이 없습니다.'}
+          />
+        </div>
 
-      <div style={s.card}>
-        <table style={s.table}>
-          <thead>
-            <tr>{['ID', '중심 좌표', '반경', '위험도', '신고수', '생성일', '자동 해제', '관리'].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
-          </thead>
-          <tbody>
+        <div style={{
+          ...s.card, padding: 0, flex: 1, minWidth: 0,
+          display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
+            padding: '14px 18px', borderBottom: '1px solid var(--border)',
+          }}>
+            <span style={{ fontSize: 15, fontWeight: 700 }}>위험구역 목록</span>
+            <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+              활성 <b style={{ color: 'var(--text-strong)', fontWeight: 800, fontFamily: "'Inter',sans-serif" }}>{zones.length}</b>개
+            </span>
+          </div>
+
+          {/* 세로는 목록이 길 때, 가로는 창이 좁아 열이 뭉개질 때를 위한 안전판이다. */}
+          <div className="ls-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'auto' }}>
+            <table style={{ ...s.table, minWidth: 520 }}>
+              <thead>
+                {/* 스크롤해도 열 이름은 남아 있어야 어느 칸인지 알 수 있다. */}
+                {/* '생성일'은 뺐다 — 자동 해제 = 생성 + 24시간이라 같은 정보가 두 번 들어간다.
+                    좁은 창에서 열이 밀려 가로 스크롤이 생기던 원인이기도 했다. */}
+                <tr>{['ID', '중심 좌표', '반경', '위험도', '신고수', '자동 해제', '관리'].map(h => (
+                  <th key={h} style={{ ...s.th, position: 'sticky', top: 0, zIndex: 1, background: 'var(--surface)' }}>{h}</th>
+                ))}</tr>
+              </thead>
+              <tbody>
             {zones.length > 0 ? zones.map(z => (
-              <tr key={z.dangerZoneId} style={s.tr}>
-                <td style={s.td}>#{z.dangerZoneId}</td>
+              // 행을 누르면 위 지도가 이 구역으로 이동한다. 위험도 select 와 관리 버튼이 든
+              // 칸은 아래에서 전파를 끊는다 — 그것들은 지도 이동이 아니라 각자의 일을 한다.
+              <tr
+                key={z.dangerZoneId}
+                onClick={() => setFocusedId(z.dangerZoneId)}
+                title="지도에서 보기"
+                style={{
+                  ...s.tr,
+                  cursor: 'pointer',
+                  background: focusedId === z.dangerZoneId ? 'var(--blue-tint)' : undefined,
+                }}
+              >
+                <td style={{ ...s.td, fontWeight: focusedId === z.dangerZoneId ? 800 : undefined }}>
+                  #{z.dangerZoneId}
+                </td>
                 {/* 구역 중심 좌표는 백엔드가 소수 3자리로 반올림해 내려준다 */}
                 <td style={s.td}>{Number(z.centerLatitude).toFixed(3)}, {Number(z.centerLongitude).toFixed(3)}</td>
                 <td style={s.td}>{z.radius}m</td>
-                <td style={s.td}>
+                <td style={s.td} onClick={e => e.stopPropagation()}>
                   <select
                     value={z.dangerLevel}
                     onChange={e => changeLevel(z, e.target.value)}
@@ -341,7 +485,6 @@ export default function AdminDangerZonePage({ user, onLogout }) {
                   </select>
                 </td>
                 <td style={s.td}>{z.reportCount ?? 0}건</td>
-                <td style={s.td}>{fmtDateTime(z.createdAt)}</td>
                 {/* 생성 24시간 뒤 자동 해제 — 시각과 남은 시간을 같이 보여준다. */}
                 <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
                   {z.expiredAt ? (
@@ -354,18 +497,21 @@ export default function AdminDangerZonePage({ user, onLogout }) {
                     </>
                   ) : '-'}
                 </td>
-                <td style={s.td}>
+                {/* 목록 패널이 화면 절반뿐이라 관리 열이 가장 먼저 넘친다. 여백만 줄여 담는다. */}
+                <td style={s.td} onClick={e => e.stopPropagation()}>
                   <div style={{ display: 'flex', gap: '6px' }}>
-                    <button style={s.btnMint} onClick={() => openDetail(z)}>신고 보기</button>
-                    <button style={s.btnRed} onClick={() => deactivate(z)}>비활성화</button>
+                    <button style={{ ...s.btnMint, padding: '7px 10px' }} onClick={() => openDetail(z)}>신고 보기</button>
+                    <button style={{ ...s.btnRed, padding: '7px 10px' }} onClick={() => deactivate(z)}>비활성화</button>
                   </div>
                 </td>
               </tr>
             )) : (
-              <tr><td colSpan={8} style={s.emptyRow}>{loading ? '불러오는 중…' : '활성 위험구역이 없습니다.'}</td></tr>
+              <tr><td colSpan={7} style={s.emptyRow}>{loading ? '불러오는 중…' : '활성 위험구역이 없습니다.'}</td></tr>
             )}
-          </tbody>
-        </table>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       {detailModal}

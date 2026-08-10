@@ -18,10 +18,10 @@ export default function PostWritePage({ user, onLogout }) {
   const isEdit = !!postId
   const fileInputRef = useRef(null)
 
-  // 수정 모드는 null 로 시작한다. GET /posts/{id}(PostDetailResponse)에 category 필드가 없어
-  // 지금 이 글이 무슨 카테고리인지 알 수가 없기 때문이다. 'INFO' 를 기본값으로 깔아두면
-  // 제목만 고쳐 저장해도 PUT 이 category:'INFO' 를 실어 보내 질문·팁·안전신고 글이 조용히 '정보'로 바뀐다
+  // 수정 모드는 null 로 시작해 불러온 값으로 채운다. 'INFO' 를 기본값으로 깔면 응답이 오기 전에
+  // 저장했을 때 PUT 이 category:'INFO' 를 실어 보내 질문·팁·안전신고 글이 조용히 '정보'로 바뀐다
   // (백엔드 updatePost 는 category 가 null 이 아니면 그대로 덮어쓴다).
+  // 2026-08-09 이전에는 PostDetailResponse 에 category 자체가 없어 끝까지 null 이었다.
   const [category, setCategory] = useState(isEdit ? null : 'INFO')
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
@@ -48,7 +48,9 @@ export default function PostWritePage({ user, onLogout }) {
       if (p.userId !== user.userId) { alert('본인 게시글만 수정할 수 있습니다.'); navigate(`/community/${postId}`); return }
       setTitle(p.title ?? '')
       setContent(p.content ?? '')
-      if (CATEGORIES.includes(p.category)) setCategory(p.category)
+      // 공지(NOTICE)는 고를 수 있는 칩에 없다. 그래도 담아 둬야 아래에서 '못 불러왔다'가 아니라
+      // '공지라 못 바꾼다'고 말할 수 있다. 백엔드 updatePost 도 공지 글의 category 는 건드리지 않는다.
+      if (p.category) setCategory(p.category)
     })()
     return () => { alive = false }
   }, [isEdit, postId, user])
@@ -134,8 +136,13 @@ export default function PostWritePage({ user, onLogout }) {
                 )
               })}
             </div>
-            {/* 수정 모드에서 아무것도 선택돼 있지 않은 상태 — 서버가 현재 카테고리를 안 내려준다.
-                "몰라서 안 고른 것"이라고 알려야 사용자가 아무거나 눌러 바꿔버리지 않는다. */}
+            {/* 수정 모드에서 아무 칩도 켜지지 않는 두 경우. 그냥 비워 두면 "안 고른 것"으로 읽혀
+                사용자가 아무거나 눌러 카테고리를 바꿔버린다. 왜 비었는지 말해 준다. */}
+            {isEdit && category === 'NOTICE' && (
+              <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--text-muted)' }}>
+                공지 글입니다. 카테고리는 바뀌지 않습니다.
+              </div>
+            )}
             {isEdit && !category && (
               <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--text-muted)' }}>
                 현재 카테고리를 불러올 수 없습니다. 그대로 두려면 선택하지 마세요 — 고르면 그 값으로 바뀝니다.

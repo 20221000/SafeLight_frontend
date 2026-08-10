@@ -8,6 +8,15 @@ export const LEVEL_STYLE = {
   LOW:    { color: 'var(--safe)',    bg: 'rgba(16,185,129,.13)', label: 'LOW' },
 }
 
+// 같은 위험도를 카카오 지도에 그릴 때 쓰는 실제 색값.
+// 지도 SDK 는 CSS 변수를 못 읽어서(캔버스/오버레이에 그대로 문자열로 들어간다) 리터럴이 필요하다.
+// MapView 의 LEVEL_COLOR 와 같은 값이다 — 한쪽만 바꾸면 지도와 관리자 화면 색이 갈린다.
+export const LEVEL_HEX = {
+  HIGH:   '#E11D48',
+  MEDIUM: '#F59E0B',
+  LOW:    '#10B981',
+}
+
 // 커뮤니티 게시글 카테고리
 export const POST_CATEGORY = {
   NOTICE:   { color: 'var(--blue-primary)', bg: 'var(--blue-tint)',      label: '공지' },

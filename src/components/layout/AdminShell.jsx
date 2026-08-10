@@ -149,11 +149,17 @@ export default function AdminShell({ user, onLogout, active, title, subtitle, he
         </div>
       </nav>
 
-      {/* 본문 */}
-      <main className="ls-scroll" style={{ flex: 1, overflowY: 'auto', minWidth: 0 }}>
+      {/* 본문 — flex 컬럼이라 아래 콘텐츠 영역이 남은 높이를 가진다.
+          그래야 페이지가 'flex:1' 로 화면 끝까지 채울 수 있다(위험구역의 지도+목록 2열).
+          내용이 짧은 페이지는 예전처럼 자연 높이로 쌓이고 아래가 남는다 — 달라지는 게 없다. */}
+      <main className="ls-scroll" style={{
+        flex: 1, overflowY: 'auto', minWidth: 0,
+        display: 'flex', flexDirection: 'column',
+      }}>
         <header style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 30px',
           borderBottom: '1px solid var(--border)', background: 'var(--surface)', position: 'sticky', top: 0, zIndex: 5,
+          flexShrink: 0,
         }}>
           <div>
             <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-.4px' }}>{title}</div>
@@ -166,7 +172,10 @@ export default function AdminShell({ user, onLogout, active, title, subtitle, he
             </div>
           </div>
         </header>
-        <div style={{ padding: '26px 30px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{
+          padding: '26px 30px', display: 'flex', flexDirection: 'column', gap: 16,
+          flex: 1, minHeight: 0,
+        }}>
           {children}
         </div>
       </main>

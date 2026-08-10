@@ -3,6 +3,8 @@ import AdminShell, { notifyAdminReportsChanged } from '../components/layout/Admi
 import ActionSheet from '../components/layout/ActionSheet'
 import ConfirmDialog from '../components/layout/ConfirmDialog'
 import RowMenu from '../components/Admin/RowMenu'
+import LocationText from '../components/LocationText'
+import LocationModal from '../components/LocationModal'
 import { adminStyles as s, LEVEL_STYLE, STATUS_STYLE } from '../components/Admin/adminStyles'
 import { apiSend } from '../utils/adminApi'
 import { fetchReportPage, fetchReportStats } from '../utils/reportsAggregate'
@@ -41,7 +43,9 @@ export default function AdminReportPage({ user, onLogout }) {
   const [search, setSearch] = useState('')          // 입력 중인 값
   const [searchTerm, setSearchTerm] = useState('')  // 디바운스로 확정된 검색어
   const [sheetReport, setSheetReport] = useState(null) // 모바일 '⋮' 액션 시트 대상
-  const [confirmFalse, setConfirmFalse] = useState(null) // 허위신고 확정 대상 (되돌릴 수 없어 한 번 더 묻는다)
+  const [confirmFalse, setConfirmFalse] = useState(null)       // 허위신고 확정 대상
+  const [confirmUnfalse, setConfirmUnfalse] = useState(null)   // 허위신고 취소 대상
+  const [locationTarget, setLocationTarget] = useState(null)   // 위치 지도 팝업 대상
 
   // 기간을 거꾸로 넣으면 백엔드가 400을 던지므로 미리 막는다.
   const invalidRange = Boolean(startDate && endDate && startDate > endDate)
@@ -121,9 +125,8 @@ export default function AdminReportPage({ user, onLogout }) {
     }
   }
 
-  // 허위신고는 서버에 되돌리는 경로가 없다(PATCH /status 는 enum 만 바꿀 뿐 isFalseReport·
-  // 신고자 벌점·위험구역을 그대로 둬서, 눌러봐야 앞뒤가 안 맞는 기록만 남는다).
-  // 그래서 누르기 전에 못 되돌린다는 걸 분명히 알린다 — 겪고 나서 알게 두지 않는다.
+  // 허위신고는 신고자에게 벌점이 붙고 위험구역 집계까지 다시 도는 무거운 처리라
+  // 되돌릴 수 있게 된 지금도(2026-08-09 백엔드 cancel 추가) 누르기 전에 한 번 묻는다.
   const markFalse = (report) => setConfirmFalse(report)
 
   const runMarkFalse = async (report) => {
@@ -133,6 +136,22 @@ export default function AdminReportPage({ user, onLogout }) {
       applyUpdated(report.reportId, updated)
     } catch (e) {
       alert('허위신고 처리 실패: ' + e.message)
+    }
+  }
+
+  // 허위신고 취소 — 되돌리기는 전용 경로로만 된다.
+  // PATCH /status 로 RECEIVED 를 보내면 서버가 400 을 던진다("false-report/cancel API로만").
+  // 상태 enum 만 바꿔서는 isFalseReport·신고자 벌점·블랙리스트가 그대로 남아
+  // 화면만 '접수됨'인 앞뒤 안 맞는 기록이 되기 때문이다.
+  const cancelFalse = (report) => setConfirmUnfalse(report)
+
+  const runCancelFalse = async (report) => {
+    setConfirmUnfalse(null)
+    try {
+      const updated = await apiSend(`/emergency-reports/${report.reportId}/false-report/cancel`, 'PATCH')
+      applyUpdated(report.reportId, updated)
+    } catch (e) {
+      alert('허위신고 취소 실패: ' + e.message)
     }
   }
 
@@ -177,6 +196,41 @@ export default function AdminReportPage({ user, onLogout }) {
     <div style={{ ...s.errorBox }}>시작일이 종료일보다 늦습니다. 기간을 다시 골라주세요.</div>
   )
 
+  // 확인창과 위치 지도 팝업. 데스크탑과 모바일이 같은 것을 쓴다 —
+  // 무게가 같은 결정인데 화면 크기에 따라 다르게 물을 이유가 없다.
+  const overlays = (
+    <>
+      <ConfirmDialog
+        open={!!confirmFalse}
+        danger
+        title={`신고 #ER-${confirmFalse?.reportId} 을(를) 허위신고로 확정합니다`}
+        message={'신고자의 허위신고 횟수가 1 올라가고, 누적 3회가 되면 자동으로 블랙리스트에 들어갑니다. 이 신고로 잡혀 있던 위험구역도 다시 계산됩니다. 잘못 눌렀다면 같은 메뉴에서 취소할 수 있습니다.'}
+        confirmLabel="허위신고로 확정"
+        cancelLabel="취소"
+        onConfirm={() => runMarkFalse(confirmFalse)}
+        onCancel={() => setConfirmFalse(null)}
+      />
+      <LocationModal
+        open={!!locationTarget}
+        title={`신고 #ER-${locationTarget?.reportId} 위치`}
+        subtitle={locationTarget ? `${locationTarget.nickname ?? '-'} · ${fmtDateTime(locationTarget.reportedAt)}` : null}
+        lat={locationTarget?.latitude}
+        lng={locationTarget?.longitude}
+        onClose={() => setLocationTarget(null)}
+      />
+      <ConfirmDialog
+        open={!!confirmUnfalse}
+        icon="refresh"
+        title={`신고 #ER-${confirmUnfalse?.reportId} 의 허위신고를 취소합니다`}
+        message={'상태가 접수됨으로 돌아가고, 신고자의 허위신고 횟수가 1 내려갑니다. 그 결과 3회 미만이 되면 블랙리스트도 함께 풀립니다. 위험구역은 신고 후 24시간이 지났으면 다시 살아나지 않습니다.'}
+        confirmLabel="허위신고 취소"
+        cancelLabel="닫기"
+        onConfirm={() => runCancelFalse(confirmUnfalse)}
+        onCancel={() => setConfirmUnfalse(null)}
+      />
+    </>
+  )
+
   // 모바일(AM2): 데스크탑 테이블 대신 카드 리스트 + 상태 필터 칩 + '⋮' 액션 시트.
   // KPI 카드는 칩의 건수가 대신하므로 생략(AM2 목업과 동일).
   if (isMobile) {
@@ -187,12 +241,15 @@ export default function AdminReportPage({ user, onLogout }) {
       { code: 'FALSE', label: '오탐', count: stats.falseCount },
     ]
 
-    // 허위신고로 확정된 건은 나머지 두 개도 잠긴다 — 서버가 되돌려주지 않아 눌러도 앞뒤가 안 맞는다.
-    // 왜 잠겼는지 라벨에 적어 둔다(그냥 회색이면 고장으로 읽힌다).
+    // 허위신고로 확정된 건은 상태 두 개가 잠긴다 — 서버가 PATCH /status 를 400 으로 막는다.
+    // 이제 잠긴 게 막다른 길은 아니라서, 왜 잠겼는지가 아니라 무엇을 먼저 하면 되는지를 적는다.
+    // 세 번째 줄은 상태에 따라 '처리' ↔ '취소'로 뒤집힌다(회색으로 죽은 줄을 남기지 않는다).
     const sheetActions = (r) => [
-      { label: r.isFalseReport ? '접수됨으로 되돌리기 (허위신고 확정 건은 불가)' : '접수됨으로 되돌리기', tone: 'primary', disabled: r.reportStatus === 'RECEIVED' || r.isFalseReport, onClick: () => setStatus(r, 'RECEIVED') },
-      { label: '해결완료로 변경', tone: 'safe', disabled: r.reportStatus === 'RESOLVED' || r.isFalseReport, onClick: () => setStatus(r, 'RESOLVED') },
-      { label: r.isFalseReport ? '허위신고 처리됨 (되돌릴 수 없음)' : '허위신고(오탐)로 처리', tone: 'danger', disabled: r.isFalseReport, onClick: () => markFalse(r) },
+      { label: r.isFalseReport ? '접수됨으로 되돌리기 (허위신고를 먼저 취소하세요)' : '접수됨으로 되돌리기', tone: 'primary', disabled: r.reportStatus === 'RECEIVED' || r.isFalseReport, onClick: () => setStatus(r, 'RECEIVED') },
+      { label: r.isFalseReport ? '해결완료로 변경 (허위신고를 먼저 취소하세요)' : '해결완료로 변경', tone: 'safe', disabled: r.reportStatus === 'RESOLVED' || r.isFalseReport, onClick: () => setStatus(r, 'RESOLVED') },
+      r.isFalseReport
+        ? { label: '허위신고 취소 (접수됨으로 되돌리기)', tone: 'primary', onClick: () => cancelFalse(r) }
+        : { label: '허위신고(오탐)로 처리', tone: 'danger', onClick: () => markFalse(r) },
     ]
 
     return (
@@ -266,11 +323,23 @@ export default function AdminReportPage({ user, onLogout }) {
                     <span style={{ fontSize: 12.5, color: 'var(--text-muted)', width: 66, flexShrink: 0 }}>신고자</span>
                     <span style={{ fontSize: 13, fontWeight: 700 }}>{r.nickname ?? '-'}</span>
                   </div>
+                  {/* 좌표만 있던 줄. 주소를 앞세우고 좌표는 아래에 작게 남긴다.
+                      카드는 폭이 좁아 stack 으로 두 줄로 쌓는다. 눌러서 지도로 볼 수 있다. */}
                   <div style={{ display: 'flex', gap: 10 }}>
-                    <span style={{ fontSize: 12.5, color: 'var(--text-muted)', width: 66, flexShrink: 0 }}>발생좌표</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "'Inter',sans-serif" }}>
-                      {r.latitude != null ? `${Number(r.latitude).toFixed(4)}, ${Number(r.longitude).toFixed(4)}` : '-'}
-                    </span>
+                    <span style={{ fontSize: 12.5, color: 'var(--text-muted)', width: 66, flexShrink: 0 }}>발생위치</span>
+                    {r.latitude != null ? (
+                      <button
+                        onClick={() => setLocationTarget(r)}
+                        style={{
+                          border: 'none', background: 'transparent', padding: 0, textAlign: 'left',
+                          cursor: 'pointer', fontFamily: 'inherit', color: 'inherit', minWidth: 0,
+                          textDecoration: 'underline', textDecorationColor: 'var(--border)',
+                          textUnderlineOffset: 3,
+                        }}
+                      >
+                        <LocationText lat={r.latitude} lng={r.longitude} stack addressSize={13} coordSize={11} addressWeight={700} />
+                      </button>
+                    ) : <span style={{ fontSize: 13 }}>-</span>}
                   </div>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                     <span style={{ fontSize: 12.5, color: 'var(--text-muted)', width: 66, flexShrink: 0 }}>연결 구역</span>
@@ -338,23 +407,14 @@ export default function AdminReportPage({ user, onLogout }) {
           />
         )}
 
-        <ConfirmDialog
-          open={!!confirmFalse}
-          danger
-          title={`신고 #ER-${confirmFalse?.reportId} 을(를) 허위신고로 확정합니다`}
-          message={'되돌릴 수 없습니다. 신고자의 허위신고 횟수가 1 올라가고, 누적 3회가 되면 자동으로 블랙리스트에 들어갑니다. 이 신고로 잡혀 있던 위험구역도 다시 계산됩니다.'}
-          confirmLabel="허위신고로 확정"
-          cancelLabel="취소"
-          onConfirm={() => runMarkFalse(confirmFalse)}
-          onCancel={() => setConfirmFalse(null)}
-        />
+        {overlays}
       </AdminShell>
     )
   }
 
   // 데스크탑 '관리' 열 드롭다운 항목. 상태를 고르는 메뉴이므로 라벨은 상태 이름 그대로 두고
   // 지금 상태에 체크를 준다(모바일 시트는 버튼 하나짜리라 '…로 변경' 서술형 라벨을 유지한다).
-  // 허위신고는 되돌릴 수 없고 신고자에게 벌점까지 붙으므로 설명을 달아 둔다 —
+  // 허위신고는 신고자에게 벌점이 붙으므로 무엇이 따라오는지 설명을 달아 둔다 —
   // 예전 빨간 버튼은 아무 경고 없이 확인창부터 띄웠다.
   const desktopActions = (r) => [
     {
@@ -362,8 +422,9 @@ export default function AdminReportPage({ user, onLogout }) {
       tone: 'primary',
       selected: r.reportStatus === 'RECEIVED' && !r.isFalseReport,
       disabled: r.isFalseReport || r.reportStatus === 'RECEIVED',
-      // 왜 못 누르는지 적어 준다 — 회색으로만 두면 화면이 고장 난 걸로 읽힌다.
-      caption: r.isFalseReport ? '허위신고로 확정된 건은 상태를 되돌릴 수 없습니다' : undefined,
+      // 왜 못 누르는지가 아니라 무엇을 먼저 하면 되는지를 적는다. 서버도 같은 이유로
+      // PATCH /status 를 400 으로 막는다("false-report/cancel API로만").
+      caption: r.isFalseReport ? '아래 허위신고 취소를 먼저 눌러주세요' : undefined,
       onClick: () => setStatus(r, 'RECEIVED'),
     },
     {
@@ -371,18 +432,24 @@ export default function AdminReportPage({ user, onLogout }) {
       tone: 'safe',
       selected: r.reportStatus === 'RESOLVED',
       disabled: r.isFalseReport || r.reportStatus === 'RESOLVED',
+      caption: r.isFalseReport ? '아래 허위신고 취소를 먼저 눌러주세요' : undefined,
       onClick: () => setStatus(r, 'RESOLVED'),
     },
-    {
-      label: '허위신고',
-      tone: 'danger',
-      selected: r.isFalseReport,
-      disabled: r.isFalseReport,
-      caption: r.isFalseReport
-        ? '이미 확정됨 · 되돌릴 수 없습니다'
-        : '되돌릴 수 없음 · 신고자 허위신고 +1 · 누적 3회면 블랙리스트',
-      onClick: () => markFalse(r),
-    },
+    // 확정된 건에서는 같은 자리가 '취소'로 뒤집힌다. 죽은 줄을 남기면 되돌릴 길이
+    // 없는 것처럼 읽히는데, 이제는 있다.
+    r.isFalseReport
+      ? {
+          label: '허위신고 취소',
+          tone: 'primary',
+          caption: '접수됨으로 되돌림 · 신고자 허위신고 -1 · 블랙리스트 해제',
+          onClick: () => cancelFalse(r),
+        }
+      : {
+          label: '허위신고',
+          tone: 'danger',
+          caption: '신고자 허위신고 +1 · 누적 3회면 블랙리스트',
+          onClick: () => markFalse(r),
+        },
   ]
 
   return (
@@ -410,7 +477,7 @@ export default function AdminReportPage({ user, onLogout }) {
 
       {rangeWarning}
 
-      {/* 필터 — 상태·기간은 서버가 거른다. 검색어만 백엔드에 파라미터가 없어 아래에서 건다. */}
+      {/* 필터 — 상태·기간·검색어 모두 서버가 거른다. */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
         <input
           style={s.searchInput}
@@ -449,7 +516,7 @@ export default function AdminReportPage({ user, onLogout }) {
         </div>
         <table style={s.table}>
           <thead>
-            <tr>{['신고번호', '신고자', '상태', '위험구역', '위험도', '좌표', '내용', '발생시각', '관리']
+            <tr>{['신고번호', '신고자', '상태', '위험구역', '위험도', '위치', '내용', '발생시각', '관리']
               .map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
           </thead>
           <tbody>
@@ -468,8 +535,24 @@ export default function AdminReportPage({ user, onLogout }) {
                     {LEVEL_STYLE[r.dangerLevel]?.label ?? r.dangerLevel ?? '-'}
                   </span>
                 </td>
-                <td style={{ ...s.td, whiteSpace: 'nowrap' }}>
-                  {r.latitude != null ? `${Number(r.latitude).toFixed(5)}, ${Number(r.longitude).toFixed(5)}` : '-'}
+                {/* 좌표만 있던 칸. 숫자 두 개로는 어디인지 알 수 없어 주소를 앞세우고
+                    좌표는 아래에 작게 남긴다(다른 지도에 찍어 보거나 신고끼리 대조할 때 쓴다).
+                    눌러서 지도로 확인할 수 있다는 걸 밑줄로 알린다. */}
+                <td style={{ ...s.td, maxWidth: 210 }}>
+                  {r.latitude != null ? (
+                    <button
+                      onClick={() => setLocationTarget(r)}
+                      title="지도로 보기"
+                      style={{
+                        border: 'none', background: 'transparent', padding: 0, textAlign: 'left',
+                        cursor: 'pointer', fontFamily: 'inherit', color: 'inherit',
+                        textDecoration: 'underline', textDecorationColor: 'var(--border)',
+                        textUnderlineOffset: 3,
+                      }}
+                    >
+                      <LocationText lat={r.latitude} lng={r.longitude} stack addressSize={12.5} coordSize={11} />
+                    </button>
+                  ) : '-'}
                 </td>
                 <td style={{ ...s.td, maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description ?? ''}>
                   {r.description || '-'}
@@ -479,10 +562,9 @@ export default function AdminReportPage({ user, onLogout }) {
                     인라인 스타일에는 :disabled 가 없어 못 누르는 버튼이 멀쩡해 보였다.
                     드롭다운으로 접고 현재 상태에 체크를 준다. (모바일은 ActionSheet 유지) */}
                 <td style={s.td}>
+                  {/* 허위신고 확정 건이라고 메뉴 자체를 잠그면 안 된다 — 되돌리는 항목이 그 안에 있다. */}
                   <RowMenu
                     label="상태 변경"
-                    disabled={r.isFalseReport}
-                    title={r.isFalseReport ? '허위신고로 확정된 건은 상태를 바꿀 수 없습니다.' : undefined}
                     actions={desktopActions(r)}
                   />
                 </td>
@@ -493,8 +575,9 @@ export default function AdminReportPage({ user, onLogout }) {
           </tbody>
         </table>
 
-        {/* 페이지네이션 — 검색 중에는 이미 전체를 받아 온 뒤라 감춘다. */}
-        {!searchTerm && pageInfo.totalPages > 1 && (
+        {/* 페이지네이션 — 검색 결과도 서버가 페이지로 나눠 주므로 검색 중에도 그대로 쓴다.
+            (예전엔 검색할 때만 전체를 긁어와 감췄다. 그 코드는 keyword 파라미터가 생기면서 사라졌다.) */}
+        {pageInfo.totalPages > 1 && (
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
           padding: '14px 4px 2px', borderTop: '1px solid var(--border)',
@@ -516,16 +599,7 @@ export default function AdminReportPage({ user, onLogout }) {
         )}
       </div>
 
-      <ConfirmDialog
-        open={!!confirmFalse}
-        danger
-        title={`신고 #ER-${confirmFalse?.reportId} 을(를) 허위신고로 확정합니다`}
-        message={'되돌릴 수 없습니다. 신고자의 허위신고 횟수가 1 올라가고, 누적 3회가 되면 자동으로 블랙리스트에 들어갑니다. 이 신고로 잡혀 있던 위험구역도 다시 계산됩니다.'}
-        confirmLabel="허위신고로 확정"
-        cancelLabel="취소"
-        onConfirm={() => runMarkFalse(confirmFalse)}
-        onCancel={() => setConfirmFalse(null)}
-      />
+      {overlays}
     </AdminShell>
   )
 }
