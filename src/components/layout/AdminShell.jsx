@@ -1,4 +1,4 @@
-// Light Safe 관리자 셸 — 뷰포트 폭에 따라 데스크탑 셸 / 모바일 셸로 분기한다.
+// Safe Light 관리자 셸 — 뷰포트 폭에 따라 데스크탑 셸 / 모바일 셸로 분기한다.
 // 데스크탑: 220px 사이드바 + 상단 헤더 + 스크롤 본문 (디자인 D 기준). 모바일: MobileAdminShell(하단 탭바).
 // 관리자 가드와 신고수 배지 조회는 양쪽 공통이므로 여기서 처리해 내려준다.
 import { useEffect, useState } from 'react'
@@ -118,7 +118,7 @@ export default function AdminShell({ user, onLogout, active, title, subtitle, he
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M9 12l2 2 4-4" /></svg>
           </div>
           <div style={{ lineHeight: 1.15 }}>
-            <div style={{ fontWeight: 700, fontSize: 14.5 }}>Light Safe</div>
+            <div style={{ fontWeight: 700, fontSize: 14.5 }}>Safe Light</div>
             <div style={{ fontSize: 10.5, color: 'var(--text-muted)', fontWeight: 600 }}>관리자 콘솔</div>
           </div>
         </div>

@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import useIsMobile from '../../hooks/useIsMobile'
 import Icon from '../Icon'
 import { iconSvg } from '../iconSvg'
-import { LAYER_COLOR, FACILITY_MAX_LEVEL, dotContent } from './layerStyle'
+import { LAYER_COLOR, FACILITY_MAX_LEVEL, STORE_NAME_MAX_LEVEL, dotContent } from './layerStyle'
 import { readEnvelope } from '../../utils/apiResponse'
 
 async function fetchCctvData() {
@@ -170,7 +170,7 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
       return
     }
 
-    const showName = map.getLevel() <= 3   // 좁게 볼 때만 상호를 띄운다(넓으면 라벨끼리 겹친다)
+    const showName = map.getLevel() <= STORE_NAME_MAX_LEVEL   // 좁게 볼 때만 상호를 띄운다(넓으면 라벨끼리 겹친다)
 
     collectStores(map.getBounds()).then(({ places, capped, failed }) => {
       if (reqId !== storeReqRef.current) return

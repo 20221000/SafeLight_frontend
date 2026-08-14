@@ -1,4 +1,4 @@
-// Light Safe 안전 현황 패널 — 근처 위험 구역
+// Safe Light 안전 현황 패널 — 근처 위험 구역
 // 데스크탑: 우측 드로어(열기/닫기 토글, 320px). 모바일: 셸의 바텀시트 안에 내용만 전폭으로 렌더.
 // 백엔드 DangerZoneResponse 실제 필드만 사용: dangerZoneId, centerLat/Lng, dangerLevel, reportCount, radius, isActive
 import { useState } from 'react'

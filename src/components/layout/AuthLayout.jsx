@@ -78,7 +78,7 @@ export function AuthLogo({ subtitle }) {
       }}>
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M9 12l2 2 4-4" /></svg>
       </div>
-      <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: '-.4px', marginTop: 14 }}>Light Safe</div>
+      <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: '-.4px', marginTop: 14 }}>Safe Light</div>
       <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 3 }}>{subtitle}</div>
     </div>
   )

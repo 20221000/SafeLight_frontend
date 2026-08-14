@@ -1,4 +1,4 @@
-// Light Safe 좌측 아이콘 레일 (64px) — 지도 · 경로 안내 · 커뮤니티 · 내 정보 + 로그아웃
+// Safe Light 좌측 아이콘 레일 (64px) — 지도 · 경로 안내 · 커뮤니티 · 내 정보 + 로그아웃
 // 내비 정의는 모바일 탭바와 navItems.jsx에서 공유한다.
 import { useNavigate } from 'react-router-dom'
 import { USER_NAV as NAV } from './navItems'

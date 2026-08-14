@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>light-safe</title>
+    <title>Safe Light · 실시간 안전 지도</title>
     <script type="text/javascript"
       src="//dapi.kakao.com/v2/maps/sdk.js?appkey="카카오맵 api키 입력"&libraries=services">
     </script>

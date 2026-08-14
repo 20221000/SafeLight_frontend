@@ -20,6 +20,10 @@ export const LAYER_COLOR = { cctv: '#E11D48', streetLamp: '#F59E0B', store: '#10
 // 다시 넓히려면 점 크기·개수부터 손봐야 한다.
 export const FACILITY_MAX_LEVEL = 4
 
+// 편의점 상호를 띄우는 상한. 카카오 레벨은 1이 최대 확대이므로 1~2단계에서만 이름이 보인다.
+// 3단계부터는 라벨 폭(상호 길이만큼 늘어난다)이 서로 겹쳐 지도의 다른 정보를 가렸다.
+export const STORE_NAME_MAX_LEVEL = 2
+
 // 시설 점 하나. 흰 테두리를 둘러 어떤 지도 배경에서도 색이 살아 있게 한다.
 export const dotContent = (color, size = 11) =>
   `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};

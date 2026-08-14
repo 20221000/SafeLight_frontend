@@ -1,4 +1,4 @@
-// Light Safe 모바일 셸 — 컴팩트 헤더 + 본문(+ 선택적 바텀시트) + 하단 탭바
+// Safe Light 모바일 셸 — 컴팩트 헤더 + 본문(+ 선택적 바텀시트) + 하단 탭바
 // UserShell과 props 계약이 동일하다. 데스크탑의 rightDrawer는 바텀시트로 매핑된다.
 import { useRef, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'

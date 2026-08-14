@@ -1,4 +1,4 @@
-// Light Safe 유저 상단 글로벌 바 (60px) — 로고 · (중앙)검색 · 현재위치 · 야간모드 · 프로필
+// Safe Light 유저 상단 글로벌 바 (60px) — 로고 · (중앙)검색 · 현재위치 · 야간모드 · 프로필
 // 검색/현재위치는 PlaceSearchBox가 담당한다(모바일 헤더와 공유).
 import { useNavigate } from 'react-router-dom'
 import PlaceSearchBox from './PlaceSearchBox'
@@ -32,7 +32,7 @@ export default function TopBar({ user, dark, onToggleDark, onPickPlace, unreadEm
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M9 12l2 2 4-4" /></svg>
         </div>
         <div style={{ lineHeight: 1.15 }}>
-          <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-.2px' }}>Light Safe</div>
+          <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-.2px' }}>Safe Light</div>
           <div style={{ fontSize: 10.5, color: 'var(--text-muted)', fontWeight: 500 }}>실시간 안전 지도</div>
         </div>
       </div>

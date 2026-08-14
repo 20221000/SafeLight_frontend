@@ -1,4 +1,4 @@
-// Light Safe 긴급 SOS (디자인 1) — 지도 중앙 하단 상시 버튼 + 3상태 오버레이
+// Safe Light 긴급 SOS (디자인 1) — 지도 중앙 하단 상시 버튼 + 3상태 오버레이
 // 상태: 대기(idle) → 확인(dim + 3초 카운트다운, 다시 누르면 즉시 접수) → 완료(토스트)
 // 백엔드 연동 보존: geolocation → POST /emergency-reports
 import { useState, useRef, useEffect } from 'react'
