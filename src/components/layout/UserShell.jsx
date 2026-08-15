@@ -7,6 +7,7 @@ import IconRail from './IconRail'
 import MobileShell from './MobileShell'
 import useIsMobile from '../../hooks/useIsMobile'
 import useUnreadNotifications from '../../hooks/useUnreadNotifications'
+import { readNightMode, writeNightMode } from '../../utils/nightMode'
 
 export default function UserShell({
   user,
@@ -19,7 +20,7 @@ export default function UserShell({
   onPickPlace,
 }) {
   const isMobile = useIsMobile()
-  const [dark, setDark] = useState(() => localStorage.getItem('ls-night') === '1')
+  const [dark, setDark] = useState(readNightMode)
   // 벨 뱃지는 데스크탑·모바일 헤더가 같이 쓰므로 여기서 한 번만 조회한다.
   // 긴급과 쪽지를 합치지 않고 그대로 넘긴다 — 벨이 둘을 다른 색으로 그린다.
   const { emergency: unreadEmergency, message: unreadMessages } = useUnreadNotifications(user)
@@ -27,7 +28,7 @@ export default function UserShell({
   const toggleDark = () => {
     setDark(prev => {
       const next = !prev
-      localStorage.setItem('ls-night', next ? '1' : '0')
+      writeNightMode(next)
       return next
     })
   }

@@ -3,15 +3,22 @@
 // modal 모드(데스크탑): 뒤 페이지를 남겨둔 채 블러 오버레이 위에 카드만 띄운다.
 import useIsMobile from '../../hooks/useIsMobile'
 import Icon from '../Icon'
+import { readNightMode } from '../../utils/nightMode'
 
 export default function AuthLayout({ children, width = 420, modal = false, onClose }) {
   const isMobile = useIsMobile()
+  // 이 화면은 UserShell 바깥이라 셸이 붙여주는 .ls-dark 가 닿지 않는다(모달도 마찬가지로
+  // 뒤 페이지의 DOM 밖에 뜬다). 저장된 값을 직접 읽어 각 루트에 붙인다.
+  // 여기엔 야간 모드 토글이 없으므로 마운트 시 한 번 읽으면 충분하다.
+  const dark = readNightMode()
+  const darkClass = dark ? 'ls-dark' : undefined
 
   // 데스크탑 모달: 현재 페이지를 블러 처리한 위로 로그인 카드만 뜬다.
   if (modal && !isMobile) {
     return (
       <div
         onClick={onClose}
+        className={darkClass}
         style={{
           position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: 24, background: 'rgba(15,23,42,.30)', backdropFilter: 'blur(7px)', WebkitBackdropFilter: 'blur(7px)',
@@ -45,13 +52,13 @@ export default function AuthLayout({ children, width = 420, modal = false, onClo
   }
 
   return (
-    <div style={{
+    <div className={darkClass} style={{
       width: '100%', minHeight: '100dvh', overflowY: 'auto', background: 'var(--bg)', color: 'var(--text-strong)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative',
     }}>
       <div style={{
         position: 'absolute', inset: 0,
-        backgroundImage: 'linear-gradient(#EEF2F8 1px,transparent 1px),linear-gradient(90deg,#EEF2F8 1px,transparent 1px)',
+        backgroundImage: 'linear-gradient(var(--auth-grid) 1px,transparent 1px),linear-gradient(90deg,var(--auth-grid) 1px,transparent 1px)',
         backgroundSize: '52px 52px', opacity: .7,
       }} />
       <div style={{ position: 'absolute', top: -120, left: -80, width: 420, height: 420, borderRadius: '50%', background: 'radial-gradient(circle, rgba(37,99,235,.10), transparent 70%)' }} />

@@ -19,6 +19,9 @@
   --radius: 14px;
   --shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
 
+  /* 로그인·회원가입 배경의 격자선 (AuthLayout) */
+  --auth-grid: #EEF2F8;
+
   /* 지도 플레이스홀더용 (카카오맵 미로드시 폴백) */
   --map-bg: #E8EEF6;
   --map-base: #E9EEF6;
@@ -37,6 +40,8 @@
   --blue-tint: #16233F;
   --blue-primary: #3B82F6;
   --shadow: 0 4px 16px rgba(0, 0, 0, .5);
+  /* 밝은 격자선을 그대로 두면 어두운 배경 위에 흰 줄이 그대로 남는다. 배경보다 살짝 밝은 정도로만. */
+  --auth-grid: #131C2E;
   --map-bg: #0E1626;
   --map-base: #0E1626;
   --map-line: #182339;
