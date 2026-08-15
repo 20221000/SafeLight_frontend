@@ -440,6 +440,8 @@ export default function RoutePage({ user, onLogout }) {
     const dest = { lat: rh.endLatitude, lng: rh.endLongitude, name: recentLabels[rh.routeHistoryId] || '도착지' }
     setSelectedStart(start); setSelectedDest(dest)
     setStartSearch(start.name); setDestSearch(dest.name); setStartMode('search')
+    // 띄워둔 후보 목록은 접는다 — 안 그러면 직전 검색어의 후보가 새 도착지 밑에 그대로 남는다.
+    setStartResult([]); setDestResult([])
     // 출발지 주소는 목록에 없으니 이때 한 번 더 조회해 이름을 채운다.
     reverseGeocode(rh.startLatitude, rh.startLongitude).then(addr => {
       if (!addr) return
@@ -462,6 +464,7 @@ export default function RoutePage({ user, onLogout }) {
     setSelectedStart(start); setSelectedDest(dest)
     setStartSearch(start.name); setDestSearch(dest.name)
     setStartMode('search'); setDestMode('search')
+    setStartResult([]); setDestResult([])
     try {
       const { routes: found, message } = await requestRoutes(start, dest)
       if (found.length === 0) { alert(message || '경로를 찾을 수 없습니다.'); return }
