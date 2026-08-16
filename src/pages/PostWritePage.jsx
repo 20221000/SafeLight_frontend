@@ -192,10 +192,13 @@ export default function PostWritePage({ user, onLogout }) {
                 background: isDragging ? 'var(--blue-tint)' : 'var(--bg)',
               }}
             >
-              <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/gif" style={{ display: 'none' }} onChange={handleFileChange} />
+              {/* accept 는 백엔드 FileStorageService.ALLOWED_CONTENT_TYPES 와 같게 둔다.
+                  예전엔 jpg·png·gif 만 열어 둬서, 서버가 받아주는 webp·pdf·txt 를 고를 수조차 없었다.
+                  (드래그로는 어차피 들어오므로 accept 만 좁혀 둔 건 막는 게 아니라 숨긴 것이었다.) */}
+              <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain" style={{ display: 'none' }} onChange={handleFileChange} />
               <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--blue-primary)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M17 8l-5-5-5 5" /><path d="M12 3v12" /></svg>
               <div style={{ fontSize: 14, fontWeight: 600 }}>파일을 드래그하거나 클릭하여 업로드</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>JPG, PNG, GIF (최대 10MB)</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>JPG, PNG, GIF, WEBP, PDF, TXT (최대 10MB)</div>
             </div>
             {files.length > 0 && (
               <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
