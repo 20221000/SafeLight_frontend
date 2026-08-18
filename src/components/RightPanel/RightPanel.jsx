@@ -1,5 +1,9 @@
-// Safe Light 안전 현황 패널 — 근처 위험 구역
+// Safe Light 안전 현황 패널 — 활성 위험 구역
 // 데스크탑: 우측 드로어(열기/닫기 토글, 320px). 모바일: 셸의 바텀시트 안에 내용만 전폭으로 렌더.
+//
+// 목록은 거리로 걸러지지 않는다. GET /danger-zones 는 활성 구역을 전부 주고 위치도 반경도 받지 않는다.
+// 그래서 '반경 500m'·'근처' 라고 쓰면 안 된다 — 몇 km 떨어진 구역이 그 말 밑에 그대로 나온다.
+// (300m 는 신고가 만드는 구역 하나의 반경이지 이 목록의 검색 범위가 아니다: DEFAULT_DANGER_RADIUS_METER)
 // 백엔드 DangerZoneResponse 실제 필드만 사용: dangerZoneId, centerLat/Lng, dangerLevel, reportCount, radius, isActive
 import { useState } from 'react'
 import { LEVEL_STYLE } from '../../theme/tokens'
@@ -17,7 +21,7 @@ function PanelContent({ activeZones, isLoading, region }) {
         <div>
           <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-.2px' }}>내 주변 안전 현황</div>
           <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
-            반경 500m{region ? ` · ${region}` : ''}
+            {region || '위치 확인 중'}
           </div>
         </div>
         <div style={{
@@ -29,15 +33,15 @@ function PanelContent({ activeZones, isLoading, region }) {
         </div>
       </div>
 
-      {/* 근처 위험 구역 */}
+      {/* 활성 위험 구역 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 18px 10px' }}>
-        <div style={{ fontSize: 13.5, fontWeight: 700 }}>근처 위험 구역</div>
+        <div style={{ fontSize: 13.5, fontWeight: 700 }}>활성 위험 구역</div>
         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeZones.length}건</div>
       </div>
       <div style={{ padding: '0 18px 22px', display: 'flex', flexDirection: 'column', gap: 9 }}>
         {activeZones.length === 0 && (
           <div style={{ fontSize: 12.5, color: 'var(--text-muted)', textAlign: 'center', padding: '18px 0' }}>
-            주변에 등록된 위험 구역이 없습니다.
+            지금 활성된 위험 구역이 없습니다.
           </div>
         )}
         {activeZones.map(z => {

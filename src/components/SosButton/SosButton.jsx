@@ -254,12 +254,14 @@ export default function SosButton({ user }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: isMobile ? 14.5 : 15.5, fontWeight: 800, letterSpacing: '-.3px' }}>긴급 신고가 접수되었습니다</span>
-                  {result?.emergencyReportId != null && (
+                  {/* 접수번호는 reportId 다(EmergencyReportResponse). emergencyReportId 라는 필드는 없어서
+                      그걸 읽는 동안에는 이 배지가 한 번도 뜨지 않았다 — 사용자가 댈 번호가 없었다. */}
+                  {result?.reportId != null && (
                     <span style={{
                       fontSize: 11, fontWeight: 700, fontFamily: "'Inter',sans-serif", letterSpacing: '.2px',
                       color: 'var(--text-muted)', background: 'var(--bg)', border: '1px solid var(--border)',
                       padding: '1px 7px', borderRadius: 6,
-                    }}>RP-{result.emergencyReportId}</span>
+                    }}>RP-{result.reportId}</span>
                   )}
                 </div>
                 <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.55 }}>

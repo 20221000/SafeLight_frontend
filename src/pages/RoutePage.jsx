@@ -341,12 +341,29 @@ export default function RoutePage({ user, onLogout }) {
     setPendingPlace(null)
   }
 
+  /**
+   * 저장해 둔 점수에 가장 가까운 경로. 점수가 없으면(= 새 검색이면) 1등이다.
+   *
+   * 북마크에는 경로 선(path)이 저장되지 않고 저장 당시의 안전시설 점수만 남는다. 그래서
+   * '그때 그 경로'는 점수로 되짚는 수밖에 없다 — 늘 1등을 고르면 북마크할 때 보던 것과
+   * 다른 길이 잡힌다. 딱 맞는 점수가 없을 수도 있어서(그사이 CCTV·편의점 데이터가 바뀌면
+   * 점수도 달라진다) 가장 가까운 쪽을 고른다.
+   * 동점이면 목록이 점수 내림차순이라 더 높은 순위가 먼저 잡힌다.
+   */
+  const pickByScore = (list, score) => {
+    if (score == null || list.length === 0) return list[0] ?? null
+    return list.reduce((best, r) =>
+      (Math.abs(r.safetyScore - score) < Math.abs(best.safetyScore - score) ? r : best))
+  }
+
   // 받은 경로들을 화면(③ 추천 경로 + 지도)에 올린다. 검색과 북마크가 같은 결과 화면을 쓴다.
   // 어느 구간의 결과인지 함께 기록해 둔다 — 위의 무효화 effect 가 이걸 보고 그냥 지나간다.
-  const showRoutes = (found, start, dest) => {
+  // preferScore 는 북마크가 저장해 둔 점수다(새 검색에는 없다).
+  const showRoutes = (found, start, dest, preferScore = null) => {
     resultSegmentRef.current = segmentKey(start, dest)
-    setRoutes(found); setSelectedRoute(found[0]); setIsSearched(true)
-    drawRoute(found[0])
+    const picked = pickByScore(found, preferScore)
+    setRoutes(found); setSelectedRoute(picked); setIsSearched(true)
+    drawRoute(picked)
   }
 
   // /routes 호출 한 곳. 경로 검색과 북마크가 같은 응답 형태를 쓰므로 공유한다.
@@ -469,7 +486,8 @@ export default function RoutePage({ user, onLogout }) {
       const { routes: found, message } = await requestRoutes(start, dest)
       if (found.length === 0) { alert(message || '경로를 찾을 수 없습니다.'); return }
       fetchRecentRoutes()
-      showRoutes(found, start, dest)
+      // 저장할 때 보던 경로가 기본으로 잡히게 한다(안 그러면 늘 점수 1등이 잡힌다).
+      showRoutes(found, start, dest, bookmark.safetyScore)
     } catch (err) {
       console.error('북마크 경로 조회 실패:', err)
       alert('경로를 불러오지 못했습니다.')
