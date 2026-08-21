@@ -12,6 +12,7 @@ export default defineConfig({
       '/messages': 'http://localhost:8080',
       '/posts': 'http://localhost:8080',
       '/cctvs': 'http://localhost:8080',
+      '/security-lights': 'http://localhost:8080',
       '/danger-zones': 'http://localhost:8080',
       '/emergency-reports': 'http://localhost:8080',
       '/routes': 'http://localhost:8080',
