@@ -45,5 +45,17 @@ export function useSafetyData() {
     return () => clearInterval(timer)
   }, [refresh])
 
+  // 화면을 다시 볼 때 바로 맞춘다. 모바일 브라우저는 배경 탭의 타이머를 늦추거나 멈춰서
+  // 폰을 잠갔다 켜면 30초 주기가 그동안 안 돈다 — 돌아왔을 때 낡은 위험구역을 보게 된다.
+  useEffect(() => {
+    const sync = () => { if (!document.hidden) refresh() }
+    document.addEventListener('visibilitychange', sync)
+    window.addEventListener('focus', sync)
+    return () => {
+      document.removeEventListener('visibilitychange', sync)
+      window.removeEventListener('focus', sync)
+    }
+  }, [refresh])
+
   return { dangerZones, lastUpdated, isLoading, refresh }
 }

@@ -76,24 +76,49 @@ export default function AdminDangerZonePage({ user, onLogout }) {
   const focusZone = useCallback((id) => setFocus(f => ({ id, seq: f.seq + 1 })), [])
   const [newCount, setNewCount] = useState(0)                // 이번 주 신규 구역 수 (렌더 중 시각 계산 금지 → 로드 시점에 계산)
 
-  const load = useCallback(async () => {
+  // silent: 주기 갱신용. '불러오는 중…' 을 띄우지 않는다 —
+  // 30초마다 목록이 로딩 문구로 깜빡이면 읽고 있던 줄을 놓친다.
+  const load = useCallback(async ({ silent = false } = {}) => {
     if (!user || user.role !== 'ADMIN') return
-    setLoading(true)
-    setError(null)
+    if (!silent) { setLoading(true); setError(null) }
     try {
       const data = await apiGet('/danger-zones')
       const list = Array.isArray(data) ? data : []
       setZones(list)
       const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
       setNewCount(list.filter(z => z.createdAt && new Date(z.createdAt).getTime() >= weekAgo).length)
+      setError(null)
     } catch (e) {
-      setError(e.message)
+      // 주기 갱신이 한 번 실패했다고 보고 있던 목록을 에러 화면으로 바꾸지 않는다.
+      if (!silent) setError(e.message)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [user])
 
   useEffect(() => { load() }, [load])
+
+  // 긴급신고가 들어오면 백엔드가 위험구역을 새로 만들거나 등급·신고수를 올린다
+  // (EmergencyReportService.createReport). 그런데 이 화면은 마운트 때 한 번만 읽고 있어서,
+  // 관리자가 화면을 열어 둔 채로는 새 구역이 영영 안 보였다 — 신고 목록에는 뜨는데
+  // 위험구역만 '활성 위험구역이 없습니다' 로 남는다. 백엔드에 푸시 수단(WebSocket·SSE)이
+  // 없으므로 지도 화면(useSafetyData)과 같은 30초 주기로 조용히 다시 읽는다.
+  useEffect(() => {
+    const timer = setInterval(() => load({ silent: true }), 30000)
+    return () => clearInterval(timer)
+  }, [load])
+
+  // 다른 탭에 갔다 돌아오면 주기를 기다리지 않고 바로 맞춘다 —
+  // 돌아온 직후가 가장 낡은 화면을 보고 판단하기 쉬운 순간이다.
+  useEffect(() => {
+    const sync = () => { if (!document.hidden) load({ silent: true }) }
+    document.addEventListener('visibilitychange', sync)
+    window.addEventListener('focus', sync)
+    return () => {
+      document.removeEventListener('visibilitychange', sync)
+      window.removeEventListener('focus', sync)
+    }
+  }, [load])
 
   const changeLevel = async (zone, level) => {
     if (level === zone.dangerLevel) return

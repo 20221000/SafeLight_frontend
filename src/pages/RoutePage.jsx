@@ -240,7 +240,9 @@ export default function RoutePage({ user, onLogout }) {
 
   const clearMarkers = useCallback(() => { markersRef.current.forEach(m => m.setMap(null)); markersRef.current = [] }, [])
 
-  // 경로 주변 안전시설 점 — 백엔드가 경로마다 cctvLocations / storeLocations 를 같이 내려준다.
+  // 경로 주변 안전시설 점 — 백엔드가 경로마다 cctvLocations / storeLocations /
+  // securityLightLocations 를 같이 내려준다(RouteDto). 가로등은 이 응답이 유일한 출처다 —
+  // /cctvs 같은 전용 엔드포인트가 없어서 지도 화면에서는 아직 못 그린다.
   const clearFacilities = useCallback(() => { facilityOverlaysRef.current.forEach(o => o.setMap(null)); facilityOverlaysRef.current = [] }, [])
 
   const clearPolylines = useCallback(() => {
@@ -264,6 +266,9 @@ export default function RoutePage({ user, onLogout }) {
         facilityOverlaysRef.current.push(o)
       })
     }
+    // 가로등을 먼저 깔고 CCTV·편의점을 그 위에 올린다. 보안등은 191,378개라 경로 하나에
+    // 수백 개가 붙는데, 나중에 그리면 몇 안 되는 CCTV 점을 노란 점들이 덮어버린다.
+    add(route?.securityLightLocations, LAYER_COLOR.streetLamp)
     add(route?.cctvLocations, LAYER_COLOR.cctv)
     add(route?.storeLocations, LAYER_COLOR.store)
   }
@@ -506,16 +511,19 @@ export default function RoutePage({ user, onLogout }) {
 
   const scoreColor = (score) => (score >= 20 ? 'var(--safe)' : score >= 10 ? 'var(--warning)' : 'var(--danger)')
 
-  // 백엔드 RouteService.analyzeSafetyData: safetyScore = 경로 50m 이내 CCTV 수 + 편의점 수.
+  // 백엔드 RouteService.analyzeSafetyData: safetyScore = 경로 주변 CCTV 수 + 편의점 수 + 보안등 수.
   // 예전엔 이 값을 'CCTV n개'로만 적었는데 편의점이 섞여 있어 틀린 라벨이었다.
+  // 보안등이 합계에 들어오면서(2026-08-21) 같은 경로라도 점수가 크게 올라간다 —
+  // 내역을 셋 다 보여주지 않으면 무엇이 많아 높은 점수인지 알 수 없다.
   const facilityCounts = (route) => ({
     cctv: route?.cctvLocations?.length ?? null,
     store: route?.storeLocations?.length ?? null,
+    streetLamp: route?.securityLightLocations?.length ?? null,
   })
   const facilityDetail = (route) => {
-    const { cctv, store } = facilityCounts(route)
-    if (cctv == null && store == null) return null
-    return `CCTV ${cctv ?? 0} · 편의점 ${store ?? 0}`
+    const { cctv, store, streetLamp } = facilityCounts(route)
+    if (cctv == null && store == null && streetLamp == null) return null
+    return `CCTV ${cctv ?? 0} · 가로등 ${streetLamp ?? 0} · 편의점 ${store ?? 0}`
   }
 
   return (
@@ -561,7 +569,7 @@ export default function RoutePage({ user, onLogout }) {
             {/* data-sheet-head: 모바일 바텀시트가 이 높이를 재서 mid(조금 올린 상태) 높이로 쓴다. */}
             <div data-sheet-head style={{ paddingTop: isMobile ? 2 : 0, paddingBottom: isMobile ? 10 : 0 }}>
               <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-.3px' }}>안전 경로 안내</div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>CCTV·가로등 밀집도로 안전한 길을 찾습니다</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>CCTV·가로등·편의점 밀집도로 안전한 길을 찾습니다</div>
             </div>
 
             {/* 출발지 */}
@@ -736,11 +744,16 @@ export default function RoutePage({ user, onLogout }) {
                       <div style={{ width: '100%', height: 5, background: 'var(--border)', borderRadius: 3, overflow: 'hidden', marginBottom: 8 }}>
                         <div style={{ height: 5, borderRadius: 3, background: scoreColor(route.safetyScore), width: `${Math.min(route.safetyScore * 2, 100)}%`, transition: 'width .4s' }} />
                       </div>
-                      {/* 점수의 내역을 같이 보여준다 — 합계만 보면 무엇이 많아서 높은지 알 수 없다. */}
+                      {/* 점수의 내역을 같이 보여준다 — 합계만 보면 무엇이 많아서 높은지 알 수 없다.
+                          셋이 한 줄에 안 들어가면 접는다(flexWrap) — 보안등 수는 네 자리까지 가고
+                          모바일 시트는 데스크탑 패널(360)보다 좁아질 수 있다. */}
                       {facilityDetail(route) && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 10, rowGap: 3, fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 6 }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                             <span style={{ width: 8, height: 8, borderRadius: '50%', background: LAYER_COLOR.cctv }} />CCTV {facilityCounts(route).cctv ?? 0}
+                          </span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: LAYER_COLOR.streetLamp }} />가로등 {facilityCounts(route).streetLamp ?? 0}
                           </span>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                             <span style={{ width: 8, height: 8, borderRadius: '50%', background: LAYER_COLOR.store }} />편의점 {facilityCounts(route).store ?? 0}

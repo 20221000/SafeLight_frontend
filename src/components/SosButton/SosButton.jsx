@@ -8,7 +8,11 @@ import Icon from '../Icon'
 import ConfirmDialog from '../layout/ConfirmDialog'
 import { readEnvelope } from '../../utils/apiResponse'
 
-export default function SosButton({ user }) {
+// onReported: 접수가 성공한 직후 부른다. 이 신고 하나로 백엔드가 위험구역을 새로 만들거나
+// (EmergencyReportService.createNewDangerZone) 기존 구역의 등급·신고수를 올리는데, 지도는
+// 30초마다 도는 폴링으로만 그걸 알게 된다. 방금 내가 누른 신고가 30초 동안 화면에 없으면
+// 접수가 안 된 것처럼 보인다 — 긴급 기능에서 제일 하면 안 되는 착각이다.
+export default function SosButton({ user, onReported }) {
   const { goLogin } = useAuthNav()
   // 모바일에서는 지도를 너무 가려 대기 버튼을 데스크탑의 1/2 크기로 줄인다(88 → 44px).
   // 44px는 터치 타깃 최소 권장치와 같아 더 줄이지 않는다. 확인 오버레이는 오조작을 막아야 하므로 그대로 크게 둔다.
@@ -93,6 +97,8 @@ export default function SosButton({ user }) {
 
       setResult(json.data || {})
       setPhase('done')
+      // 폴링을 기다리지 않고 바로 다시 읽는다. 실패해도 접수 자체는 끝났으므로 화면은 건드리지 않는다.
+      onReported?.()
       doneTimerRef.current = setTimeout(() => setPhase('idle'), 6000)
     } catch (err) {
       // 예전 판정은 `err.code === err.PERMISSION_DENIED` 였는데, 네트워크 오류처럼

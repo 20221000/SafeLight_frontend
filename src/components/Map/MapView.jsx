@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import useIsMobile from '../../hooks/useIsMobile'
 import Icon from '../Icon'
 import { iconSvg } from '../iconSvg'
-import { LAYER_COLOR, FACILITY_MAX_LEVEL, STORE_NAME_MAX_LEVEL, dotContent } from './layerStyle'
+import { LAYER_COLOR, FACILITY_MAX_LEVEL, LAMP_MAX_LEVEL, STORE_NAME_MAX_LEVEL, dotContent } from './layerStyle'
 import { readEnvelope } from '../../utils/apiResponse'
 
 async function fetchCctvData() {
@@ -21,6 +21,31 @@ async function fetchCctvData() {
   } catch (err) {
     console.error('CCTV 조회 실패:', err)
     return []
+  }
+}
+
+// 가로등(보안등) — /cctvs 와 같은 자리의 엔드포인트다. 다만 백엔드가 주는 건 LocationDto 라
+// 이름·용도 없이 좌표뿐이다(SecurityLightService 는 CSV 에서 위경도만 추린다).
+//
+// 실패와 '엔드포인트 없음'을 빈 배열로 뭉뚱그리지 않고 null 로 돌려준다. 둘을 같게 다루면
+// 아직 안 만들어진 기능이 '이 지역에는 가로등이 없습니다' 로 보인다 — 서울 한복판에서
+// 그 문구가 뜨면 데이터가 없는 줄 알게 된다. null 이면 칩을 잠근 채로 둔다.
+async function fetchSecurityLightData() {
+  try {
+    const res = await fetch('/security-lights')
+    if (!res.ok) {
+      console.warn('가로등 조회 실패: HTTP', res.status)
+      return null
+    }
+    const json = await readEnvelope(res)
+    if (!json.success || !json.data) {
+      console.warn('가로등 조회 실패:', json.message)
+      return null
+    }
+    return json.data.map(item => ({ lat: item.latitude, lng: item.longitude }))
+  } catch (err) {
+    console.error('가로등 조회 실패:', err)
+    return null
   }
 }
 
@@ -89,10 +114,18 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
   const mapInstance = useRef(null)
   const cctvDataRef = useRef([])
   const cctvOverlaysRef = useRef([])
+  const lampDataRef = useRef([])
+  const lampOverlaysRef = useRef([])
   const storeOverlaysRef = useRef([])
   const storeReqRef = useRef(0)          // 늦게 도착한 이전 검색 결과를 버리기 위한 순번
   const [cctvNotice, setCctvNotice] = useState('')
+  const [lampNotice, setLampNotice] = useState('')
   const [storeNotice, setStoreNotice] = useState('')
+  // 가로등 목록을 실제로 받아왔는지. 못 받으면 칩을 잠근 채로 둔다 —
+  // 켤 수 없는 칩을 켜지게 해두면 눌러도 아무 일이 없어 고장으로 보인다.
+  // 지도 'idle' 리스너 안에서도 읽어야 해서 ref 를 같이 둔다(filters 와 같은 이유).
+  const [lampReady, setLampReady] = useState(false)
+  const lampReadyRef = useRef(false)
   const locationMarkerRef = useRef(null)
   const dangerZoneOverlaysRef = useRef([])
   const routePolylinesRef = useRef([])
@@ -149,6 +182,47 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
 
     setCctvNotice(inBounds.length === 0 ? '이 지역에는 CCTV가 없습니다' : `CCTV ${inBounds.length}대`)
   }, [clearCctv])
+
+  const clearLamps = useCallback(() => {
+    lampOverlaysRef.current.forEach(o => o.setMap(null))
+    lampOverlaysRef.current = []
+  }, [])
+
+  // 뷰포트 내 가로등 점. CCTV 와 같은 처리인데 상한 레벨만 LAMP_MAX_LEVEL 로 다르다
+  // (개수가 3배라 같은 레벨에서 그리면 지도가 멎는다 — layerStyle.js 의 실측 표 참고).
+  const renderLampsInBounds = useCallback(() => {
+    const map = mapInstance.current
+    if (!map || !window.kakao) return
+
+    clearLamps()
+    // 목록을 못 받았으면 문구도 띄우지 않는다. 필터 기본값이 켬이라 이걸 빼면
+    // 데이터가 없는데도 '지도를 확대하면…' → '이 지역에는 가로등이 없습니다' 로 이어져
+    // 서울 한복판에서 가로등이 없는 동네처럼 보인다. 아직 못 받아온 것과 진짜 없는 것은 다르다.
+    if (!lampReadyRef.current) { setLampNotice(''); return }
+    if (!filtersRef.current?.streetLamp) { setLampNotice(''); return }
+    if (map.getLevel() > LAMP_MAX_LEVEL) {
+      setLampNotice('지도를 확대하면 주변 가로등이 표시됩니다')
+      return
+    }
+
+    const bounds = map.getBounds()
+    const inBounds = lampDataRef.current.filter(pos =>
+      bounds.contain(new window.kakao.maps.LatLng(pos.lat, pos.lng))
+    )
+
+    inBounds.forEach(pos => {
+      const overlay = new window.kakao.maps.CustomOverlay({
+        position: new window.kakao.maps.LatLng(pos.lat, pos.lng),
+        // CCTV(zIndex 2)·편의점(3)보다 아래에 깐다. 가로등이 제일 많아서 위에 얹으면
+        // 몇 안 되는 CCTV 점을 노란 점들이 덮는다 — 경로 화면에서 그리는 순서와 같은 이유다.
+        content: dotContent(LAYER_COLOR.streetLamp), yAnchor: 0.5, xAnchor: 0.5, zIndex: 1,
+      })
+      overlay.setMap(map)
+      lampOverlaysRef.current.push(overlay)
+    })
+
+    setLampNotice(inBounds.length === 0 ? '이 지역에는 가로등이 없습니다' : `가로등 ${inBounds.length}개`)
+  }, [clearLamps])
 
   const clearStores = useCallback(() => {
     storeOverlaysRef.current.forEach(o => o.setMap(null))
@@ -344,8 +418,19 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
         renderCctvInBounds()
       })
 
+      // 가로등은 못 받아올 수 있다(엔드포인트가 아직 없으면 404). 그때는 칩을 잠근 채로 두고
+      // 아무것도 그리지 않는다 — lampReady 가 false 로 남는다.
+      fetchSecurityLightData().then(data => {
+        if (!data) return
+        lampDataRef.current = data
+        lampReadyRef.current = true
+        setLampReady(true)
+        renderLampsInBounds()
+      })
+
       window.kakao.maps.event.addListener(mapInstance.current, 'idle', () => {
         renderCctvInBounds()
+        renderLampsInBounds()
         renderStoresInBounds()
       })
 
@@ -411,13 +496,14 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
       }, 300)
       return () => clearInterval(check)
     }
-  }, [renderCctvInBounds, renderStoresInBounds])
+  }, [renderCctvInBounds, renderLampsInBounds, renderStoresInBounds])
 
   // 필터 변경 시 (각 render 함수가 켬/끔을 알아서 처리한다)
   useEffect(() => {
     renderCctvInBounds()
+    renderLampsInBounds()
     renderStoresInBounds()
-  }, [mapReady, filters, renderCctvInBounds, renderStoresInBounds])
+  }, [mapReady, filters, renderCctvInBounds, renderLampsInBounds, renderStoresInBounds])
 
   // 위험구역 변경 시
   useEffect(() => {
@@ -447,11 +533,12 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
       requestAnimationFrame(() => {
         mapInstance.current.relayout()
         renderCctvInBounds()
+        renderLampsInBounds()
       })
     })
     ro.observe(mapRef.current)
     return () => ro.disconnect()
-  }, [renderCctvInBounds])
+  }, [renderCctvInBounds, renderLampsInBounds])
 
   // 상단 장소 검색에서 선택한 위치로 이동 + 핀 표시
   useEffect(() => {
@@ -496,7 +583,7 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
           }}
         >
           <Icon name="compass" size={isMobile ? 13 : 15} />
-          {/* safetyScore 는 CCTV + 편의점 합계다(RouteService.analyzeSafetyData). */}
+          {/* safetyScore 는 CCTV + 편의점 + 보안등 합계다(RouteService.analyzeSafetyData). */}
           <span>경로 안내 중 · 안전시설 {routeState.safetyScore}곳 경유</span>
           <span style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -512,9 +599,9 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
       <div style={{ position: 'absolute', top: 16, left: isMobile ? 12 : 16, zIndex: 10, display: 'flex', gap: isMobile ? 6 : 8 }}>
         {[
           { key: 'cctv', icon: 'cctv', label: 'CCTV' },
-          // 가로등은 아직 데이터가 없다 — 켜도 표시할 게 없으므로 잠가둔다.
-          // 데이터가 들어오면 LAYER_COLOR.streetLamp(노랑) 점으로 그린다.
-          { key: 'streetLamp', icon: 'street-lamp', label: '가로등', pending: true },
+          // 가로등은 GET /security-lights 를 받아온 뒤에만 열린다. 그 응답이 없으면
+          // (엔드포인트가 아직 없거나 실패) 켤 것이 없으므로 잠근 채로 둔다.
+          { key: 'streetLamp', icon: 'street-lamp', label: '가로등', pending: !lampReady },
           // safeZone = 편의점(안전거점).
           { key: 'safeZone', icon: 'store', label: '편의점' },
         ].map(ly => {
@@ -524,7 +611,7 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
               key={ly.key}
               onClick={() => { if (!ly.pending) onToggleFilter?.(ly.key) }}
               disabled={ly.pending}
-              title={ly.pending ? '가로등 데이터는 아직 제공되지 않습니다' : undefined}
+              title={ly.pending ? '가로등 데이터를 불러오지 못했습니다' : undefined}
               style={{
                 display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 6,
                 height: CHIP_H, padding: isMobile ? '0 9px' : '0 13px',
@@ -546,14 +633,14 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
       {/* 레이어 안내 — 몇 곳을 찾았는지, 왜 안 보이는지(너무 넓게 봄), 결과가 잘렸는지 알린다.
           앞의 색 점이 지도 위 점 색과 같아서 어느 레이어 얘기인지 바로 읽힌다.
           모바일에서 경로 배너가 떠 있으면 그 아래로 내린다. */}
-      {(cctvNotice || storeNotice) && (
+      {(cctvNotice || lampNotice || storeNotice) && (
         <div style={{
           position: 'absolute', zIndex: 10, left: isMobile ? 12 : 16,
           top: 16 + CHIP_H + (isMobile && routeState?.routeActive ? 46 : 8),
           display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
           gap: 5, pointerEvents: 'none',
         }}>
-          {[[cctvNotice, LAYER_COLOR.cctv], [storeNotice, LAYER_COLOR.store]]
+          {[[cctvNotice, LAYER_COLOR.cctv], [lampNotice, LAYER_COLOR.streetLamp], [storeNotice, LAYER_COLOR.store]]
             .filter(([text]) => text)
             .map(([text, color]) => (
               <div key={color} style={{
