@@ -30,9 +30,6 @@ dist-ssr
 .env.test.local
 .env.production.local
 
-# API 키 포함 파일
-index.html
-
 # 의존성
 node_modules
 
