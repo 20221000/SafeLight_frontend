@@ -1,9 +1,16 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
+    { "source": "/users", "destination": "http://13.125.163.45/users" },
     { "source": "/users/:path*", "destination": "http://13.125.163.45/users/:path*" },
+
+    { "source": "/friends", "destination": "http://13.125.163.45/friends" },
     { "source": "/friends/:path*", "destination": "http://13.125.163.45/friends/:path*" },
+
+    { "source": "/messages", "destination": "http://13.125.163.45/messages" },
     { "source": "/messages/:path*", "destination": "http://13.125.163.45/messages/:path*" },
+
+    { "source": "/posts", "destination": "http://13.125.163.45/posts" },
     { "source": "/posts/:path*", "destination": "http://13.125.163.45/posts/:path*" },
 
     { "source": "/cctvs", "destination": "http://13.125.163.45/cctvs" },
@@ -18,10 +25,19 @@
     { "source": "/danger-zones", "destination": "http://13.125.163.45/danger-zones" },
     { "source": "/danger-zones/:path*", "destination": "http://13.125.163.45/danger-zones/:path*" },
 
+    { "source": "/emergency-reports", "destination": "http://13.125.163.45/emergency-reports" },
     { "source": "/emergency-reports/:path*", "destination": "http://13.125.163.45/emergency-reports/:path*" },
+
+    { "source": "/routes", "destination": "http://13.125.163.45/routes" },
     { "source": "/routes/:path*", "destination": "http://13.125.163.45/routes/:path*" },
+
+    { "source": "/bookmarks", "destination": "http://13.125.163.45/bookmarks" },
     { "source": "/bookmarks/:path*", "destination": "http://13.125.163.45/bookmarks/:path*" },
+
+    { "source": "/notifications", "destination": "http://13.125.163.45/notifications" },
     { "source": "/notifications/:path*", "destination": "http://13.125.163.45/notifications/:path*" },
+
+    { "source": "/recent-routes", "destination": "http://13.125.163.45/recent-routes" },
     { "source": "/recent-routes/:path*", "destination": "http://13.125.163.45/recent-routes/:path*" },
 
     { "source": "/admin/dashboard", "destination": "http://13.125.163.45/admin/dashboard" },
