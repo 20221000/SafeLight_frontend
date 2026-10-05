@@ -1,52 +1,52 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    { "source": "/users", "destination": "http://13.125.163.45/users" },
-    { "source": "/users/:path*", "destination": "http://13.125.163.45/users/:path*" },
+    { "source": "/users", "destination": "https://api.safelight26.com/users" },
+    { "source": "/users/:path*", "destination": "https://api.safelight26.com/users/:path*" },
 
-    { "source": "/friends", "destination": "http://13.125.163.45/friends" },
-    { "source": "/friends/:path*", "destination": "http://13.125.163.45/friends/:path*" },
+    { "source": "/friends", "destination": "https://api.safelight26.com/friends" },
+    { "source": "/friends/:path*", "destination": "https://api.safelight26.com/friends/:path*" },
 
-    { "source": "/messages", "destination": "http://13.125.163.45/messages" },
-    { "source": "/messages/:path*", "destination": "http://13.125.163.45/messages/:path*" },
+    { "source": "/messages", "destination": "https://api.safelight26.com/messages" },
+    { "source": "/messages/:path*", "destination": "https://api.safelight26.com/messages/:path*" },
 
-    { "source": "/posts", "destination": "http://13.125.163.45/posts" },
-    { "source": "/posts/:path*", "destination": "http://13.125.163.45/posts/:path*" },
+    { "source": "/posts", "destination": "https://api.safelight26.com/posts" },
+    { "source": "/posts/:path*", "destination": "https://api.safelight26.com/posts/:path*" },
 
-    { "source": "/cctvs", "destination": "http://13.125.163.45/cctvs" },
-    { "source": "/cctvs/:path*", "destination": "http://13.125.163.45/cctvs/:path*" },
+    { "source": "/cctvs", "destination": "https://api.safelight26.com/cctvs" },
+    { "source": "/cctvs/:path*", "destination": "https://api.safelight26.com/cctvs/:path*" },
 
-    { "source": "/security-lights", "destination": "http://13.125.163.45/security-lights" },
-    { "source": "/security-lights/:path*", "destination": "http://13.125.163.45/security-lights/:path*" },
+    { "source": "/security-lights", "destination": "https://api.safelight26.com/security-lights" },
+    { "source": "/security-lights/:path*", "destination": "https://api.safelight26.com/security-lights/:path*" },
 
-    { "source": "/police-facilities", "destination": "http://13.125.163.45/police-facilities" },
-    { "source": "/police-facilities/:path*", "destination": "http://13.125.163.45/police-facilities/:path*" },
+    { "source": "/police-facilities", "destination": "https://api.safelight26.com/police-facilities" },
+    { "source": "/police-facilities/:path*", "destination": "https://api.safelight26.com/police-facilities/:path*" },
 
-    { "source": "/danger-zones", "destination": "http://13.125.163.45/danger-zones" },
-    { "source": "/danger-zones/:path*", "destination": "http://13.125.163.45/danger-zones/:path*" },
+    { "source": "/danger-zones", "destination": "https://api.safelight26.com/danger-zones" },
+    { "source": "/danger-zones/:path*", "destination": "https://api.safelight26.com/danger-zones/:path*" },
 
-    { "source": "/emergency-reports", "destination": "http://13.125.163.45/emergency-reports" },
-    { "source": "/emergency-reports/:path*", "destination": "http://13.125.163.45/emergency-reports/:path*" },
+    { "source": "/emergency-reports", "destination": "https://api.safelight26.com/emergency-reports" },
+    { "source": "/emergency-reports/:path*", "destination": "https://api.safelight26.com/emergency-reports/:path*" },
 
-    { "source": "/routes", "destination": "http://13.125.163.45/routes" },
-    { "source": "/routes/:path*", "destination": "http://13.125.163.45/routes/:path*" },
+    { "source": "/routes", "destination": "https://api.safelight26.com/routes" },
+    { "source": "/routes/:path*", "destination": "https://api.safelight26.com/routes/:path*" },
 
-    { "source": "/bookmarks", "destination": "http://13.125.163.45/bookmarks" },
-    { "source": "/bookmarks/:path*", "destination": "http://13.125.163.45/bookmarks/:path*" },
+    { "source": "/bookmarks", "destination": "https://api.safelight26.com/bookmarks" },
+    { "source": "/bookmarks/:path*", "destination": "https://api.safelight26.com/bookmarks/:path*" },
 
-    { "source": "/notifications", "destination": "http://13.125.163.45/notifications" },
-    { "source": "/notifications/:path*", "destination": "http://13.125.163.45/notifications/:path*" },
+    { "source": "/notifications", "destination": "https://api.safelight26.com/notifications" },
+    { "source": "/notifications/:path*", "destination": "https://api.safelight26.com/notifications/:path*" },
 
-    { "source": "/recent-routes", "destination": "http://13.125.163.45/recent-routes" },
-    { "source": "/recent-routes/:path*", "destination": "http://13.125.163.45/recent-routes/:path*" },
+    { "source": "/recent-routes", "destination": "https://api.safelight26.com/recent-routes" },
+    { "source": "/recent-routes/:path*", "destination": "https://api.safelight26.com/recent-routes/:path*" },
 
-    { "source": "/admin/dashboard", "destination": "http://13.125.163.45/admin/dashboard" },
-    { "source": "/admin/dashboard/:path*", "destination": "http://13.125.163.45/admin/dashboard/:path*" },
+    { "source": "/admin/dashboard", "destination": "https://api.safelight26.com/admin/dashboard" },
+    { "source": "/admin/dashboard/:path*", "destination": "https://api.safelight26.com/admin/dashboard/:path*" },
 
-    { "source": "/admin/emergency-reports", "destination": "http://13.125.163.45/admin/emergency-reports" },
-    { "source": "/admin/emergency-reports/:path*", "destination": "http://13.125.163.45/admin/emergency-reports/:path*" },
+    { "source": "/admin/emergency-reports", "destination": "https://api.safelight26.com/admin/emergency-reports" },
+    { "source": "/admin/emergency-reports/:path*", "destination": "https://api.safelight26.com/admin/emergency-reports/:path*" },
 
-    { "source": "/admin/users/:id(\\d+)/status", "destination": "http://13.125.163.45/admin/users/:id/status" },
+    { "source": "/admin/users/:id(\\d+)/status", "destination": "https://api.safelight26.com/admin/users/:id/status" },
 
     { "source": "/(.*)", "destination": "/index.html" }
   ]
