@@ -11,6 +11,7 @@
 // 정식 API 이고 숫자도 서버가 센 값 그대로다. 한 테이블로 합치는 건 백엔드 요청 10번.
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { apiFetch } from '../utils/api'
+import { vibrate, VIBRATION } from '../utils/vibrate'
 
 // 알림·쪽지를 읽음 처리한 화면이 이 이벤트를 쏘면 셸의 뱃지가 다시 센다.
 export const NOTIFICATIONS_CHANGED = 'ls-notifications-changed'
@@ -27,6 +28,11 @@ export default function useUnreadNotifications(user) {
 
   // 폴링 타이머가 매번 새 refresh 를 붙잡지 않도록 ref 로 넘긴다.
   const refreshRef = useRef(null)
+
+  // 직전에 센 값. 늘었을 때만 진동한다. 처음 센 값(로그인 직후·새로고침)은 기준선일 뿐
+  // 새로 온 것이 아니므로 울리지 않는다 — 쌓여 있던 알림 때문에 들어오자마자 떨면 안 된다.
+  const lastRef = useRef(null)
+  useEffect(() => { lastRef.current = null }, [user])
 
   const refresh = useCallback(async () => {
     if (!user || !localStorage.getItem('accessToken')) {
@@ -48,6 +54,18 @@ export default function useUnreadNotifications(user) {
       emergency: emergency ?? prev.emergency,
       message: message ?? prev.message,
     }))
+
+    // 실패한 쪽(null)은 비교하지 않고 직전 값을 유지한다 — 다음 성공 때 늘어난 만큼만 울리게.
+    const last = lastRef.current
+    if (last) {
+      // 친구 긴급신고가 쪽지보다 급하다. 둘 다 늘었으면 긴급 패턴 하나만 울린다.
+      if (emergency != null && emergency > last.emergency) vibrate(VIBRATION.friendEmergency)
+      else if (message != null && message > last.message) vibrate(VIBRATION.message)
+    }
+    lastRef.current = {
+      emergency: emergency ?? last?.emergency ?? 0,
+      message: message ?? last?.message ?? 0,
+    }
   }, [user])
 
   refreshRef.current = refresh

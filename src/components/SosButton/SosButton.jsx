@@ -7,6 +7,7 @@ import useAuthNav from '../../hooks/useAuthNav'
 import Icon from '../Icon'
 import ConfirmDialog from '../layout/ConfirmDialog'
 import { apiFetch } from '../../utils/api'
+import { vibrate, VIBRATION } from '../../utils/vibrate'
 
 // onReported: 접수가 성공한 직후 부른다. 이 신고 하나로 백엔드가 위험구역을 새로 만들거나
 // (EmergencyReportService.createNewDangerZone) 기존 구역의 등급·신고수를 올리는데, 지도는
@@ -94,6 +95,8 @@ export default function SosButton({ user, onReported }) {
 
       setResult(json.data || {})
       setPhase('done')
+      // 급한 상황이라 화면을 안 보고 있을 수 있다. 접수됐다는 걸 손으로도 알게 한다.
+      vibrate(VIBRATION.sosAccepted)
       // 폴링을 기다리지 않고 바로 다시 읽는다. 실패해도 접수 자체는 끝났으므로 화면은 건드리지 않는다.
       onReported?.()
       doneTimerRef.current = setTimeout(() => setPhase('idle'), 6000)
