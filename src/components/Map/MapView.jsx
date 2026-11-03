@@ -1,11 +1,12 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import useIsMobile from '../../hooks/useIsMobile'
+import useMyLocation from '../../hooks/useMyLocation'
 import Icon from '../Icon'
 import { iconSvg } from '../iconSvg'
 import { LAYER_COLOR, FACILITY_MAX_LEVEL, lampMaxLevel, POLICE_Z, MY_LOCATION_Z, ROUTE_ENDPOINT_Z, SEARCH_PIN_Z, dotContent } from './layerStyle'
 import { createFacilityLoader } from '../../utils/facilityApi'
 import { renderFacilityDots } from './facilityLayer'
-import { collectStores } from './storeSearch'
+import { collectStores, padBounds, boundsContain } from './storeSearch'
 
 // CCTV·가로등은 '지금 보이는 범위'만 받는다. 백엔드가 서울 CSV 대신 전국 공공데이터를
 // 쓰게 되면서 각각 25만·184만 건이 되어 전체 조회 자체가 없어졌다(범위를 안 보내면 400).
@@ -41,6 +42,8 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
   const lampReqRef = useRef(0)
   const storeOverlaysRef = useRef([])
   const storeReqRef = useRef(0)
+  const storeCacheRef = useRef(null)     // 화면보다 넓게 검색해 둔 편의점 { bounds, level, places, capped }
+  const storeDrawnRef = useRef(null)     // 지금 지도에 그려 둔 결과 — 같으면 다시 그리지 않는다
   const policeOverlaysRef = useRef([])
   const policeReqRef = useRef(0)
   const [cctvNotice, setCctvNotice] = useState('')
@@ -53,21 +56,33 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
   // 다시 시도할 방법까지 막힌다. 대신 실패는 실패라고 문구로 알린다 —
   // '이 지역에는 가로등이 없습니다' 로 뭉뚱그리지 않는 것이 원래 목적이었다.
   const locationMarkerRef = useRef(null)
+  // 내 위치는 계속 받는다. 따라가기(follow)가 켜져 있으면 지도가 나를 따라오고,
+  // 지도를 직접 끌면 꺼진다. '현재 위치' 버튼이 다시 켠다(구글 지도와 같은 방식).
+  const { position: myPos, error: locationError } = useMyLocation()
+  // 검색한 곳이나 경로를 보러 들어온 경우엔 처음부터 따라가지 않는다 — 안 그러면 첫 위치가
+  // 오는 순간 출발·도착(검색 핀)이 잠깐 보였다가 내 위치로 튕겨 나간다.
+  const [follow, setFollow] = useState(() => !(searchTarget || routeState?.routePath?.length))
+  // 지도에 경로가 새로 그려지거나 다른 곳을 검색하면 따라가기를 끈다(그쪽을 보는 중이다).
+  // effect 에서 끄면 한 번 더 그려지므로, props 가 바뀐 그 렌더에서 바로 맞춘다.
+  const [prevRoute, setPrevRoute] = useState(routeState)
+  const [prevSearch, setPrevSearch] = useState(searchTarget)
+  if (routeState !== prevRoute) {
+    setPrevRoute(routeState)
+    if (routeState?.routePath?.length) setFollow(false)
+  }
+  if (searchTarget !== prevSearch) {
+    setPrevSearch(searchTarget)
+    if (searchTarget) setFollow(false)
+  }
   const dangerZoneOverlaysRef = useRef([])
   const routePolylinesRef = useRef([])
   const routeMarkersRef = useRef([])
   const searchMarkerRef = useRef(null)
-  const searchTargetRef = useRef(searchTarget) // 초기 지오로케이션이 검색 위치를 덮어쓰지 않도록 추적
 
   // 지도 인스턴스가 준비됐는지. 카카오 SDK 가 늦게 뜨면 initMap 이 setInterval 로 미뤄지는데,
   // 그 사이 경로·위험구역·검색 위치 effect 가 먼저 돌면서 mapInstance 가 없어 조용히 빠져나가
   // 다시 그릴 계기가 영영 없었다. 준비되면 이 값이 바뀌면서 해당 effect 들이 다시 돈다.
   const [mapReady, setMapReady] = useState(false)
-
-  // 경로 안내 중에는 초기 위치 조회 결과로 지도를 되돌리면 안 된다 —
-  // 안내를 시작하면 출발·도착이 잠깐 보였다가 내 위치로 튕겨 나갔다.
-  const routeStateRef = useRef(routeState)
-  routeStateRef.current = routeState
 
   // 지도 'idle' 리스너는 초기화 때 한 번만 등록되므로 filters 를 클로저로 잡으면 첫 값에 영원히 묶인다.
   // (그래서 CCTV 를 꺼도 지도를 움직이는 순간 마커가 되살아났다.) 항상 최신 값을 ref 로 읽는다.
@@ -131,29 +146,47 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
     storeOverlaysRef.current = []
   }, [])
 
-  // 편의점(안전거점) 마커 — 지도 영역이 바뀔 때마다 다시 조회한다.
+  // 편의점(안전거점) 마커 — 지도 영역이 바뀔 때마다 그린다.
+  //
+  // 예전에는 지도가 멈출 때마다 카카오에 다시 검색했다. 내 위치 따라가기가 생기면서 걷는 동안
+  // 1~2초마다 지도가 움직이게 됐고, 그때마다 검색(최대 48건)이 나가 카카오 하루 사용량을 깎고
+  // 점이 지워졌다 다시 그려지며 깜빡였다. 이제 화면보다 넓게 검색해 두고, 그 안에서 움직이면
+  // 다시 검색하지 않는다(CCTV·가로등의 facilityApi 캐시와 같은 방식).
+  // 검색 결과가 45곳 한도에 잘렸으면(capped) 확대하면 더 정확해지므로, 확대 단계가 바뀌면 다시 검색한다.
   const renderStoresInBounds = useCallback(() => {
     const map = mapInstance.current
     if (!map || !window.kakao?.maps?.services) return
 
     // 이 시점 이후 도착하는 이전 요청의 콜백은 무시된다
     const reqId = ++storeReqRef.current
-    clearStores()
 
-    if (!filtersRef.current?.store) { setStoreNotice(''); return }
+    if (!filtersRef.current?.store) { clearStores(); storeDrawnRef.current = null; setStoreNotice(''); return }
     if (map.getLevel() > FACILITY_MAX_LEVEL) {
+      clearStores()
+      storeDrawnRef.current = null
       setStoreNotice('지도를 확대하면 주변 편의점이 표시됩니다')
       return
     }
 
+    const view = map.getBounds()
+    // 문구의 '몇 곳'은 넓게 받아 둔 전체가 아니라 지금 화면 안의 수다.
+    const showNotice = ({ places, capped }) => {
+      const inView = places.filter(p => view.contain(new window.kakao.maps.LatLng(Number(p.y), Number(p.x)))).length
+      // 끝까지 쪼개고도 넘쳤다면 그 사실을 숨기지 않는다 — 실제로는 더 있다.
+      setStoreNotice(
+        inView === 0 ? '이 지역에는 편의점이 없습니다'
+          : capped ? `편의점 ${inView}곳 이상 · 확대하면 더 정확합니다`
+            : `편의점 ${inView}곳`
+      )
+    }
     // 예전에는 많이 확대하면 상호가 붙은 알약을 띄웠다. 알약 하나가 100px 가까이 돼서
     // 지도의 상호·도로명을 덮었고, 편의점이 몰린 곳에서는 알약끼리 겹쳐 오히려 못 읽었다.
     // CCTV·가로등과 같은 점으로 통일한다 — 상호는 지도가 이미 제 글씨로 보여준다.
-    collectStores(map.getBounds()).then(({ places, capped, failed }) => {
-      if (reqId !== storeReqRef.current) return
-      if (failed) { setStoreNotice('편의점 정보를 불러오지 못했습니다'); return }
-
-      places.forEach(place => {
+    const draw = (entry) => {
+      showNotice(entry)
+      if (storeDrawnRef.current === entry) return // 이미 그려 둔 결과다 — 지우고 다시 그리면 깜빡인다.
+      clearStores()
+      entry.places.forEach(place => {
         const overlay = new window.kakao.maps.CustomOverlay({
           position: new window.kakao.maps.LatLng(Number(place.y), Number(place.x)),
           content: dotContent(LAYER_COLOR.store), yAnchor: 0.5, xAnchor: 0.5, zIndex: 3,
@@ -161,13 +194,28 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
         overlay.setMap(map)
         storeOverlaysRef.current.push(overlay)
       })
+      storeDrawnRef.current = entry
+    }
 
-      // 끝까지 쪼개고도 넘쳤다면 그 사실을 숨기지 않는다 — 실제로는 더 있다.
-      setStoreNotice(
-        places.length === 0 ? '이 지역에는 편의점이 없습니다'
-          : capped ? `편의점 ${places.length}곳 이상 · 확대하면 더 정확합니다`
-            : `편의점 ${places.length}곳`
-      )
+    const cached = storeCacheRef.current
+    if (cached && boundsContain(cached.bounds, view) && (!cached.capped || cached.level === map.getLevel())) {
+      draw(cached)
+      return
+    }
+
+    const target = padBounds(view)
+    const level = map.getLevel()
+    collectStores(target).then(({ places, capped, failed }) => {
+      if (reqId !== storeReqRef.current) return
+      if (failed) {
+        clearStores()
+        storeDrawnRef.current = null
+        setStoreNotice('편의점 정보를 불러오지 못했습니다')
+        return
+      }
+      const entry = { bounds: target, level, places, capped }
+      storeCacheRef.current = entry
+      draw(entry)
     })
   }, [clearStores])
 
@@ -317,56 +365,10 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
         renderPoliceInBounds()
       })
 
+      // 사용자가 지도를 직접 끌면 따라가기를 끈다 — 계속 내 위치로 끌려오면 주변을 둘러볼 수 없다.
+      window.kakao.maps.event.addListener(mapInstance.current, 'dragstart', () => setFollow(false))
+
       setMapReady(true)
-
-      navigator.geolocation?.getCurrentPosition(
-        (pos) => {
-          const { latitude, longitude } = pos.coords
-          const latlng = new window.kakao.maps.LatLng(latitude, longitude)
-          // 위치 조회는 느리게 끝나므로, 그 사이 사용자가 보려던 화면을 덮어쓰지 않게 막는다.
-          // - 검색으로 진입(다른 페이지에서 장소를 골라 넘어옴)
-          // - 경로 안내 중(북마크·경로 화면에서 넘어옴) — 안 막으면 출발·도착이 잠깐 보였다가
-          //   내 위치로 튕겨 나간다. 마커는 그대로 찍되 화면만 건드리지 않는다.
-          const keepView = searchTargetRef.current || routeStateRef.current?.routePath?.length
-          if (!keepView) {
-            mapInstance.current.setCenter(latlng)
-            mapInstance.current.setLevel(FACILITY_MAX_LEVEL)
-          }
-
-          const content = `
-            <div style="position:relative;width:24px;height:24px;">
-              <div style="
-                position:absolute;top:50%;left:50%;
-                transform:translate(-50%,-50%);
-                width:24px;height:24px;border-radius:50%;
-                background:rgba(66,133,244,0.2);
-                animation:pulse 2s infinite;
-              "></div>
-              <div style="
-                position:absolute;top:50%;left:50%;
-                transform:translate(-50%,-50%);
-                width:14px;height:14px;border-radius:50%;
-                background:#4285F4;border:2px solid #fff;
-                box-shadow:0 2px 6px rgba(0,0,0,0.3);
-              "></div>
-              <style>
-                @keyframes pulse {
-                  0% { transform:translate(-50%,-50%) scale(1); opacity:1; }
-                  100% { transform:translate(-50%,-50%) scale(2.5); opacity:0; }
-                }
-              </style>
-            </div>
-          `
-          const locationOverlay = new window.kakao.maps.CustomOverlay({
-            // zIndex 를 안 주면 0 이라 시설 점(가로등 1 · CCTV 2 · 편의점 3) 아래로 묻힌다.
-            position: latlng, content, yAnchor: 0.5, xAnchor: 0.5, zIndex: MY_LOCATION_Z,
-          })
-          locationOverlay.setMap(mapInstance.current)
-          locationMarkerRef.current = locationOverlay
-        },
-        (error) => console.log('위치 권한 없음:', error),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      )
     }
 
     if (window.kakao && window.kakao.maps) {
@@ -381,6 +383,67 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
       return () => clearInterval(check)
     }
   }, [renderCctvInBounds, renderLampsInBounds, renderStoresInBounds, renderPoliceInBounds])
+
+  // 내 위치 점. 위치가 새로 올 때마다 점을 옮기고, 따라가기 중이면 지도도 함께 옮긴다.
+  // follow 를 의존성에 두어 '현재 위치' 버튼으로 다시 켜는 순간에도 바로 내 위치로 간다.
+  useEffect(() => {
+    if (!mapReady || !myPos || !window.kakao) return
+    const latlng = new window.kakao.maps.LatLng(myPos.lat, myPos.lng)
+
+    if (locationMarkerRef.current) {
+      locationMarkerRef.current.setPosition(latlng)
+      if (follow) mapInstance.current.panTo(latlng)
+      return
+    }
+
+    // 첫 위치. 검색·경로를 보러 들어왔으면 follow 가 처음부터 꺼져 있어 화면은 그대로 두고 점만 찍는다.
+    if (follow) {
+      mapInstance.current.setCenter(latlng)
+      mapInstance.current.setLevel(FACILITY_MAX_LEVEL)
+    }
+
+    const content = `
+      <div style="position:relative;width:24px;height:24px;">
+        <div style="
+          position:absolute;top:50%;left:50%;
+          transform:translate(-50%,-50%);
+          width:24px;height:24px;border-radius:50%;
+          background:rgba(66,133,244,0.2);
+          animation:pulse 2s infinite;
+        "></div>
+        <div style="
+          position:absolute;top:50%;left:50%;
+          transform:translate(-50%,-50%);
+          width:14px;height:14px;border-radius:50%;
+          background:#4285F4;border:2px solid #fff;
+          box-shadow:0 2px 6px rgba(0,0,0,0.3);
+        "></div>
+        <style>
+          @keyframes pulse {
+            0% { transform:translate(-50%,-50%) scale(1); opacity:1; }
+            100% { transform:translate(-50%,-50%) scale(2.5); opacity:0; }
+          }
+        </style>
+      </div>
+    `
+    const locationOverlay = new window.kakao.maps.CustomOverlay({
+      // zIndex 를 안 주면 0 이라 시설 점(가로등 1 · CCTV 2 · 편의점 3) 아래로 묻힌다.
+      position: latlng, content, yAnchor: 0.5, xAnchor: 0.5, zIndex: MY_LOCATION_Z,
+    })
+    locationOverlay.setMap(mapInstance.current)
+    locationMarkerRef.current = locationOverlay
+  }, [mapReady, myPos, follow])
+
+  // 위치를 못 받는 이유를 지도 위 안내 줄에 띄운다. 예전에는 콘솔에만 남아서, 권한을 거부했거나
+  // GPS 가 꺼진 사람은 점이 왜 안 나오는지 알 길이 없었다.
+  // 시간 초과(3)는 이미 위치가 있으면 잠깐 끊긴 것이라 띄우지 않는다.
+  const locationNotice =
+    locationError?.code === 1 ? '위치 권한이 꺼져 있어 내 위치를 표시할 수 없습니다'
+      : locationError?.code === 2 ? '내 위치를 확인할 수 없습니다 · 휴대폰 위치(GPS)를 켜 주세요'
+        : locationError?.code === 3 && !myPos ? '내 위치를 찾는 중입니다…'
+          : ''
+  // 버튼은 실제로 따라가고 있을 때만 채운다 — 위치가 없는데 '따라가는 중'으로 보이면 헷갈린다.
+  const following = follow && !!myPos && !locationError
 
   // 필터 변경 시 (각 render 함수가 켬/끔을 알아서 처리한다)
   useEffect(() => {
@@ -428,7 +491,6 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
 
   // 상단 장소 검색에서 선택한 위치로 이동 + 핀 표시
   useEffect(() => {
-    searchTargetRef.current = searchTarget
     if (!searchTarget || !mapReady || !window.kakao) return
     const latlng = new window.kakao.maps.LatLng(searchTarget.lat, searchTarget.lng)
     mapInstance.current.setLevel(3)
@@ -515,14 +577,14 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
       {/* 레이어 안내 — 몇 곳을 찾았는지, 왜 안 보이는지(너무 넓게 봄), 결과가 잘렸는지 알린다.
           앞의 색 점이 지도 위 점 색과 같아서 어느 레이어 얘기인지 바로 읽힌다.
           모바일에서 경로 배너가 떠 있으면 그 아래로 내린다. */}
-      {(cctvNotice || lampNotice || storeNotice || policeNotice) && (
+      {(locationNotice || cctvNotice || lampNotice || storeNotice || policeNotice) && (
         <div style={{
           position: 'absolute', zIndex: 10, left: isMobile ? 12 : 16,
           top: 16 + CHIP_H + (isMobile && routeState?.routeActive ? 46 : 8),
           display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
           gap: 5, pointerEvents: 'none',
         }}>
-          {[[cctvNotice, LAYER_COLOR.cctv], [lampNotice, LAYER_COLOR.streetLamp], [storeNotice, LAYER_COLOR.store], [policeNotice, LAYER_COLOR.police]]
+          {[[locationNotice, 'var(--blue-primary)'], [cctvNotice, LAYER_COLOR.cctv], [lampNotice, LAYER_COLOR.streetLamp], [storeNotice, LAYER_COLOR.store], [policeNotice, LAYER_COLOR.police]]
             .filter(([text]) => text)
             .map(([text, color]) => (
               <div key={color} style={{
@@ -564,22 +626,23 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
 
       {/* 현재 위치 버튼 (줌 위) */}
       <button
-        title="현재 위치로"
+        title={following ? '내 위치 따라가는 중' : '현재 위치로'}
+        aria-pressed={following}
         style={{
           position: 'absolute', bottom: 'calc(108px + var(--ls-sheet-peek, 0px))', right: 20, zIndex: 10,
           width: 40, height: 40, borderRadius: 11,
-          background: 'var(--surface)', border: '1px solid var(--border)',
-          color: 'var(--blue-primary)', cursor: 'pointer', boxShadow: 'var(--shadow)',
+          // 따라가기 중이면 버튼을 채워서 켜져 있다는 걸 보여준다.
+          background: following ? 'var(--blue-primary)' : 'var(--surface)',
+          border: following ? '1px solid var(--blue-primary)' : '1px solid var(--border)',
+          color: following ? '#fff' : 'var(--blue-primary)', cursor: 'pointer', boxShadow: 'var(--shadow)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
         onClick={() => {
-          navigator.geolocation?.getCurrentPosition(pos => {
-            if (!mapInstance.current) return
-            const latlng = new window.kakao.maps.LatLng(
-              pos.coords.latitude, pos.coords.longitude
-            )
-            mapInstance.current.setCenter(latlng)
-          })
+          // 위치는 이미 계속 받고 있다. 따라가기를 켜고 지금 위치로 옮기기만 하면 된다.
+          // 아직 첫 위치가 안 왔으면 켜 두기만 한다 — 위치가 오는 대로 따라간다.
+          setFollow(true)
+          if (!myPos || !mapInstance.current) return
+          mapInstance.current.setCenter(new window.kakao.maps.LatLng(myPos.lat, myPos.lng))
         }}
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3.2" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" strokeLinecap="round" /></svg>

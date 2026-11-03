@@ -15,6 +15,30 @@ const STORE_CATEGORY = 'CS2'
 const STORE_PAGE_CAP = 45
 const STORE_SPLIT_DEPTH = 2   // 4²= 최대 16조각. 여기까지 쪼개도 넘치면 그 사실을 문구로 알린다.
 
+// 화면보다 이만큼 넓게 검색해 둔다. 조금 움직일 때마다(특히 내 위치 따라가기 중) 다시 검색하지 않기 위한 여유분.
+// CCTV·가로등의 facilityApi PAD_RATIO 와 같은 값이다.
+const STORE_PAD_RATIO = 0.5
+
+// 화면 영역을 위아래·좌우로 여유분만큼 넓힌다.
+export const padBounds = (bounds) => {
+  const { LatLng, LatLngBounds } = window.kakao.maps
+  const sw = bounds.getSouthWest(), ne = bounds.getNorthEast()
+  const latPad = ((ne.getLat() - sw.getLat()) * STORE_PAD_RATIO) / 2
+  const lngPad = ((ne.getLng() - sw.getLng()) * STORE_PAD_RATIO) / 2
+  return new LatLngBounds(
+    new LatLng(sw.getLat() - latPad, sw.getLng() - lngPad),
+    new LatLng(ne.getLat() + latPad, ne.getLng() + lngPad),
+  )
+}
+
+// outer 가 inner 를 통째로 품는지.
+export const boundsContain = (outer, inner) => {
+  const osw = outer.getSouthWest(), one = outer.getNorthEast()
+  const isw = inner.getSouthWest(), ine = inner.getNorthEast()
+  return osw.getLat() <= isw.getLat() && osw.getLng() <= isw.getLng() &&
+    one.getLat() >= ine.getLat() && one.getLng() >= ine.getLng()
+}
+
 // 영역을 4분면으로 나눈다.
 const splitBounds = (bounds) => {
   const { LatLng, LatLngBounds } = window.kakao.maps
