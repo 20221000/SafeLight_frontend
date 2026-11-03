@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
 import useIsMobile from '../../hooks/useIsMobile'
 import useMyLocation from '../../hooks/useMyLocation'
 import Icon from '../Icon'
@@ -29,6 +29,11 @@ const loadPolice = createFacilityLoader('/police-facilities', item => ({
   lng: item.longitude,
   name: item.name,
 }))
+
+// 내 위치 점(과 따라가는 지도)이 새 위치로 미끄러지는 시간. 브라우저가 걸을 때 위치를 주는 간격(약 1초)과 맞췄다.
+const GLIDE_MS = 1000
+// 지도가 멈췄을 때 시설을 다시 그리는 최소 간격. 따라가기 중 매 프레임 그리지 않기 위한 것이다.
+const IDLE_RENDER_GAP_MS = 500
 
 export default function MapView({ filters, onToggleFilter, dangerZones = [], routeState = null, onCancelRoute, searchTarget = null }) {
   // 모바일에서는 레이어 칩을 데스크탑의 3/4 크기로 줄인다(34 → 26px).
@@ -86,8 +91,10 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
 
   // 지도 'idle' 리스너는 초기화 때 한 번만 등록되므로 filters 를 클로저로 잡으면 첫 값에 영원히 묶인다.
   // (그래서 CCTV 를 꺼도 지도를 움직이는 순간 마커가 되살아났다.) 항상 최신 값을 ref 로 읽는다.
+  // 렌더 도중 ref 에 쓰면 React 가 렌더를 버리고 다시 할 때 값이 어긋날 수 있다(ESLint react-hooks/refs).
+  // 그려진 직후(layout effect)에 맞춘다 — 아래 '필터 변경 시' effect 보다 먼저 돌아 늘 최신 값을 읽는다.
   const filtersRef = useRef(filters)
-  filtersRef.current = filters
+  useLayoutEffect(() => { filtersRef.current = filters }, [filters])
 
   // 뷰포트 내 CCTV 점. 필터가 꺼져 있으면 지우기만 한다 —
   // 켬/끔 판단을 renderFacilityDots 안에 모아둬야 호출부마다 조건을 빠뜨리지 않는다.
@@ -358,11 +365,19 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
 
       // CCTV·가로등·편의점·치안시설 모두 아래 mapReady effect 가 곧바로 한 번 그린다.
       // 여기서 또 부르면 같은 범위를 두 번 조회한다.
+      // 내 위치를 따라갈 때는 지도 중심을 매 프레임 조금씩 옮기므로 'idle' 이 아주 잦게 올 수 있다.
+      // 그때마다 네 레이어를 다시 그리지 않도록 0.5초에 한 번까지만 그린다(마지막 움직임 뒤에는 꼭 한 번 그린다).
+      let idleTimer = null
+      let lastRender = 0
       window.kakao.maps.event.addListener(mapInstance.current, 'idle', () => {
-        renderCctvInBounds()
-        renderLampsInBounds()
-        renderStoresInBounds()
-        renderPoliceInBounds()
+        clearTimeout(idleTimer)
+        idleTimer = setTimeout(() => {
+          lastRender = Date.now()
+          renderCctvInBounds()
+          renderLampsInBounds()
+          renderStoresInBounds()
+          renderPoliceInBounds()
+        }, Math.max(0, IDLE_RENDER_GAP_MS - (Date.now() - lastRender)))
       })
 
       // 사용자가 지도를 직접 끌면 따라가기를 끈다 — 계속 내 위치로 끌려오면 주변을 둘러볼 수 없다.
@@ -391,9 +406,28 @@ export default function MapView({ filters, onToggleFilter, dangerZones = [], rou
     const latlng = new window.kakao.maps.LatLng(myPos.lat, myPos.lng)
 
     if (locationMarkerRef.current) {
-      locationMarkerRef.current.setPosition(latlng)
-      if (follow) mapInstance.current.panTo(latlng)
-      return
+      // 새 위치로 바로 옮기지 않고 GLIDE_MS 동안 조금씩 옮긴다 — 위치는 약 1초마다 오므로
+      // 다음 위치가 올 즈음 이동이 끝나 걷는 대로 이어져 보인다(앱의 Label.moveTo 와 같은 효과).
+      // 따라가기 중이면 지도 중심도 같은 값으로 함께 옮겨 점이 화면 가운데에 붙어 있게 한다.
+      // 예전에는 점은 순간이동하고 지도는 panTo 로 따로 미끄러져 '툭, 스윽' 하고 움직였다.
+      const marker = locationMarkerRef.current
+      const from = marker.getPosition()
+      const fromLat = from.getLat(), fromLng = from.getLng()
+      const start = performance.now()
+      let frame = 0
+      const step = (now) => {
+        const t = Math.min(1, (now - start) / GLIDE_MS)
+        const here = new window.kakao.maps.LatLng(
+          fromLat + (myPos.lat - fromLat) * t,
+          fromLng + (myPos.lng - fromLng) * t,
+        )
+        marker.setPosition(here)
+        if (follow) mapInstance.current.setCenter(here)
+        if (t < 1) frame = requestAnimationFrame(step)
+      }
+      frame = requestAnimationFrame(step)
+      // 다음 위치가 오거나 따라가기가 꺼지면 이 이동을 멈추고, 지금 점이 있는 자리에서 새로 시작한다.
+      return () => cancelAnimationFrame(frame)
     }
 
     // 첫 위치. 검색·경로를 보러 들어왔으면 follow 가 처음부터 꺼져 있어 화면은 그대로 두고 점만 찍는다.
