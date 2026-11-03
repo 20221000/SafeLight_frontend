@@ -8,6 +8,11 @@ import Icon from '../Icon'
 import ConfirmDialog from '../layout/ConfirmDialog'
 import { apiFetch } from '../../utils/api'
 import { vibrate, VIBRATION } from '../../utils/vibrate'
+import { getRecentFix } from '../../hooks/useMyLocation'
+
+// 이만큼 최근이고 이만큼 정확한 위치면 새로 잡지 않고 그대로 신고에 싣는다.
+const RECENT_FIX_MS = 30000
+const RECENT_FIX_ACCURACY_M = 100
 
 // onReported: 접수가 성공한 직후 부른다. 이 신고 하나로 백엔드가 위험구역을 새로 만들거나
 // (EmergencyReportService.createNewDangerZone) 기존 구역의 등급·신고수를 올리는데, 지도는
@@ -69,17 +74,29 @@ export default function SosButton({ user, onReported }) {
     clearTimer()
     setLoading(true)
     try {
-      const position = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true, timeout: 10000, maximumAge: 0,
-        })
-      })
-      const { latitude, longitude } = position.coords
+      // 지도가 방금(30초 안) 받은 정확한 위치가 있으면 그대로 쓴다. 급한 순간에 GPS 를
+      // 처음부터 다시 잡느라 기다리게 하지 않기 위해서다. 없을 때만 새로 받는다 —
+      // 막 켠 휴대폰이나 실내에서 나온 직후엔 10초로는 모자라 실패하는 일이 있어 20초까지 기다린다.
+      const recent = getRecentFix(RECENT_FIX_MS, RECENT_FIX_ACCURACY_M)
+      const { latitude, longitude } = recent
+        ? { latitude: recent.lat, longitude: recent.lng }
+        : (await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true, timeout: 20000, maximumAge: RECENT_FIX_MS,
+            })
+          })).coords
 
       const json = await apiFetch('/emergency-reports', {
         method: 'POST',
         body: { latitude, longitude, description: '긴급 신고' },
       })
+
+      if (json.status === 401) {
+        // 로그인이 만료됐다. 다시 시도해도 같으므로 '다시 시도' 창은 띄우지 않는다 —
+        // apiFetch 가 만료를 알리고 App 이 로그인 안내를 띄운다(여기서 또 띄우면 창이 두 겹이 된다).
+        setPhase('idle')
+        return
+      }
 
       if (!json.success) {
         // 실패했으면 다시 누르는 게 유일한 다음 행동이다. 창을 닫고 버튼을 찾아 헤매게 두지 않는다.

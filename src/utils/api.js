@@ -47,5 +47,15 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, header
     payload = JSON.stringify(body)
   }
 
-  return readEnvelope(await fetch(path, { method, headers: requestHeaders, body: payload }))
+  const res = await fetch(path, { method, headers: requestHeaders, body: payload })
+  // 토큰을 실어 보냈는데 401 이면 로그인이 만료된 것이다(백엔드 토큰은 24시간짜리다).
+  // 예전에는 앱을 열 때 한 번만 확인해서, 쓰는 도중 만료되면 화면은 로그인된 채로
+  // 긴급신고·알림만 조용히 실패했다. 어느 요청에서든 만료를 알아채면 App 에 알린다.
+  if (res.status === 401 && requestHeaders.Authorization) {
+    window.dispatchEvent(new Event(SESSION_EXPIRED))
+  }
+  return readEnvelope(res)
 }
+
+// 로그인 만료 이벤트. App 이 받아 로그아웃하고 다시 로그인하라고 안내한다.
+export const SESSION_EXPIRED = 'ls-session-expired'

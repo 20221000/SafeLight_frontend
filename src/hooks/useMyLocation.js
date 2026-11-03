@@ -15,6 +15,19 @@ const OPTIONS = {
   timeout: 15000,
 }
 
+// 가장 최근에 받은 위치. 긴급신고가 GPS 를 처음부터 다시 잡느라 기다리지 않도록 같이 쓴다.
+let lastFix = null // { lat, lng, accuracy, at }
+
+/**
+ * maxAgeMs 안에 받은, 오차 maxAccuracyM 이내의 위치. 없으면 null.
+ * 지도 화면이 떠 있는 동안 계속 채워진다.
+ */
+export function getRecentFix(maxAgeMs, maxAccuracyM) {
+  if (!lastFix || Date.now() - lastFix.at > maxAgeMs) return null
+  if (lastFix.accuracy > maxAccuracyM) return null
+  return lastFix
+}
+
 // enabled 가 false 면 위치를 받지 않는다(그리고 받던 것을 멈춘다).
 // 반환: { position: { lat, lng, accuracy } | null, error: GeolocationPositionError | null }
 //   error.code 1 = 권한 거부, 2 = 위치를 알 수 없음(GPS 꺼짐 등), 3 = 시간 초과
@@ -36,12 +49,14 @@ export default function useMyLocation(enabled = true) {
     if (!enabled || !navigator.geolocation) return
     const id = navigator.geolocation.watchPosition(
       (pos) => {
-        setError(null)
-        setPosition({
+        const fix = {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
           accuracy: pos.coords.accuracy,
-        })
+        }
+        lastFix = { ...fix, at: Date.now() }
+        setError(null)
+        setPosition(fix)
       },
       // 시간 초과(3)는 다음 위치가 오면 풀린다. 권한 거부(1)는 사용자가 바꾸기 전까지 그대로다.
       (err) => setError(err),

@@ -18,7 +18,8 @@ import AdminDangerZonePage from './pages/AdminDangerZonePage'
 import AdminNoticePage from './pages/AdminNoticePage'
 import useIsMobile from './hooks/useIsMobile'
 import { apiSend } from './utils/adminApi'
-import { apiFetch } from './utils/api'
+import { apiFetch, SESSION_EXPIRED } from './utils/api'
+import ConfirmDialog from './components/layout/ConfirmDialog'
 import './App.css'
 
 function AppRoutes() {
@@ -79,6 +80,20 @@ function AppRoutes() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // 쓰는 도중 로그인이 만료되면(apiFetch 가 401 을 받으면) 로그아웃하고 알린다.
+  // 모르고 두면 화면은 로그인된 채로 긴급신고가 막히고 친구 알림 뱃지도 멈춘다.
+  const [sessionExpired, setSessionExpired] = useState(false)
+  useEffect(() => {
+    const onExpired = () => {
+      setUser(null)
+      localStorage.removeItem('user')
+      localStorage.removeItem('accessToken')
+      setSessionExpired(true)
+    }
+    window.addEventListener(SESSION_EXPIRED, onExpired)
+    return () => window.removeEventListener(SESSION_EXPIRED, onExpired)
+  }, [])
+
   // 프로필 일부 변경 시 앱 상태 + localStorage 동기화 (상단바/아바타 즉시 반영)
   const handleUpdateUser = (patch) => {
     setUser(prev => {
@@ -134,6 +149,17 @@ function AppRoutes() {
         <Route path="/admin/dangerzones" element={<AdminDangerZonePage user={user} onLogout={handleLogout} />} />
         <Route path="/admin/notices" element={<AdminNoticePage user={user} onLogout={handleLogout} />} />
       </Routes>
+
+      <ConfirmDialog
+        open={sessionExpired}
+        icon="user"
+        title="로그인이 만료되었습니다"
+        message="로그인한 지 24시간이 지나 다시 로그인해야 합니다. 다시 로그인하면 긴급신고와 친구 알림을 계속 쓸 수 있습니다. 급한 상황이면 112에 바로 전화하세요."
+        confirmLabel="로그인"
+        cancelLabel="닫기"
+        onConfirm={() => { setSessionExpired(false); navigate('/login', { state: { backgroundLocation: location } }) }}
+        onCancel={() => setSessionExpired(false)}
+      />
 
       {/* 모달 오버레이 — 뒤 페이지를 남겨둔 채 로그인/회원가입 카드만 띄운다 */}
       {backgroundLocation && (
